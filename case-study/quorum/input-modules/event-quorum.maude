@@ -1,0 +1,23 @@
+load ../events
+load quorum
+
+mod EVENT-QUORUM is 
+  inc EVENTS .
+  inc OBJS .
+
+  *** user-specified interesting events 
+  ops startRead startWrite commitRead commitReadSucc commitReadFail commitWrite startTxn commitTxn : Address Id -> Event [ctor] .
+  ops clientComplete : Address -> Event [ctor] .
+  var O : Address . var ID : Id .
+
+  *** rule-specific mapping
+  eq eventMap = ['issue-read, startRead(O,ID) ; startTxn(O,ID)] ;;
+      ['issue-write, startWrite(O,ID) ; startTxn(O,ID)] ;;
+      ['commit-read, commitRead(O,ID) ; commitTxn(O,ID)] ;;
+      ['commit-read-second, commitReadSucc(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID)] ;;
+      ['commit-read-third-success, commitReadSucc(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID)] ;;
+      ['commit-read-third-fail, commitReadFail(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID)] ;;
+      ['commit-read-tmo-fail, commitReadFail(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID)] ;;
+      ['commit-write, commitWrite(O,ID) ; commitTxn(O,ID)] ;;
+      ['silent-issue,clientComplete(O)] [nonexec] .
+endm

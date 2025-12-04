@@ -1,0 +1,189 @@
+--- quorum, tb
+load ../apmaude
+
+mod SORTS is
+  inc APMAUDE .
+  
+  sorts Read Write Operation Operations Key Value Timestamp Val Vals Id Result .  
+  subsort Float < Timestamp .
+  subsort Nat < Value .  
+  subsorts Read Write < Operation < Operations Content .
+  subsort Nat < Id .
+  subsort Val < Vals .
+  
+  op <_`,_> : Value Timestamp -> Val [ctor] .
+  op ack : -> Val .
+  
+  op done : -> Value .
+  
+  op read : Id Key Timestamp -> Read .
+  op write : Id Key Value Timestamp -> Write .
+  
+  op ept : -> Operations .
+  op _::_ : Operations Operations -> Operations [assoc id: ept] .  
+  
+  op none : -> Vals .
+  op _;;_ : Vals Vals -> Vals [assoc comm id: none] .
+  
+  op reply : Id Val -> Content .
+
+  op issue : -> Content .
+endm
+--- view Value from TRIV to SORTS is sort Elt to Value . endv
+view Id from TRIV to SORTS is sort Elt to Id . endv
+view Val from TRIV to SORTS is sort Elt to Val . endv
+view Key from TRIV to SORTS is sort Elt to Key . endv
+view AddressSetF from TRIV to SORTS is sort Elt to AddressSetF . endv
+view Vals from TRIV to SORTS is sort Elt to Vals . endv
+
+
+mod OBJS is
+  inc SORTS .
+  --- pr MAP{Id,Value} .  
+  pr MAP{Key,Val} .  
+  pr MAP{Key,AddressSetF} .  
+  pr MAP{Id,Vals} .  
+  
+  ops Coord Cohort : -> ActorType .
+  
+  --- for Coord
+  op ops:_ : Operations -> Attribute .
+  op replicas:_ : Map{Key,AddressSetF} -> Attribute .  
+  op waiting:_ : Map{Id,Vals} -> Attribute .
+  op results:_ : Map{Id,Vals} -> Attribute .
+  
+  --- for Cohort
+  op database:_ : Map{Key,Val} -> Attribute .
+endm
+
+
+mod QUORUM is
+  inc OBJS .
+  
+  vars O O' : Address .  var ID : Id .  var K : Key .
+  var OPS : Operations .  var R : Map{Key,AddressSetF} .
+  var AS : AttributeSet .  var P : Content .
+  var OS : AddressSetF .  var DB : Map{Key,Val} .
+  vars VAL VAL' : Val .  vars VALS VALS' : Vals .
+  var RS : Map{Id,Vals} .  vars TEMP IV : Map{Id,Vals} .
+  vars V V' : Value .  vars TS TS' : Timestamp .
+  var T : Float . var SL : ScheduleList .
+  
+  ************
+  *** Read ***
+  ************
+      
+  rl [issue-read] :
+    {T, issue from O to O}
+    < O : Coord | ops: (read(ID,K,TS) :: OPS), waiting: empty,
+                  replicas: R, AS > 
+    {T | SL}
+  => 
+    < O : Coord | ops: OPS, waiting: (ID |-> none),
+                  replicas: R, AS > 
+    insertList({T | SL},propagate read(ID,K,TS) from O to R[K] at T) .
+  
+  rl [reply] :
+    {T,(read(ID,K,TS) from O' to O) }
+    < O : Cohort | database: DB, AS >
+    {T | SL}
+  => 
+    < O : Cohort | database: DB, AS > 
+    insertList({T | SL},delay-msg(reply(ID,DB[K]) from O to O',T)) .
+
+  crl [update] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    {T | SL}
+    < O : Coord | waiting: TEMP, results: RS, AS >
+  if TEMP := ID |-> VALS ;; VAL /\ not quorum2(TEMP) .
+
+  crl [commit-read] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    {T | SL}
+    < O : Coord | waiting: empty, results: latest(TEMP,RS,T), AS >
+    [0.0, issue from O to O, 0]
+  if TEMP := ID |-> VALS ;; VAL /\ quorum2(TEMP) .
+    
+  --- whether there are 2 val
+  op quorum2 : Map{Id,Vals} -> Bool .
+  eq quorum2(ID |-> VAL ;; VAL') = true .
+  eq quorum2(IV) = false [owise] .
+
+  --- insert the latest val in first para to second para, with ts T
+  op latest : Map{Id,Vals} Map{Id,Vals} Float -> Map{Id,Vals} . 
+  *** for read
+  ceq latest(ID |-> < V, TS > ;; VALS, RS, T) = insert(ID, < V, T >, RS) if max(TS,VALS) .
+  *** for write
+  eq latest(ID |-> ack ;; VALS, RS,T) = insert(ID, < done, T >, RS) .
+ 
+  --- is TS is max in Vals's ts
+  op max : Timestamp Vals -> Bool .
+  ceq max(TS, < V', TS' > ;; VALS) = false if TS < TS' .
+  eq max(TS, VALS) = true [owise] .
+  
+  
+  rl [silent-reply] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < O : Coord | results: (ID |-> VALS, RS), AS >
+    {T | SL}
+  =>   
+    < O : Coord | results: (ID |-> VALS, RS), AS > 
+    {T | SL} .
+     
+     
+  *************
+  *** Write ***
+  *************
+  
+  rl [issue-write] :
+    {T, issue from O to O}
+    < O : Coord | ops: (write(ID,K,V,TS) :: OPS), waiting: empty,
+                  replicas: R, AS > 
+    {T | SL}
+  => 
+    < O : Coord | ops: OPS, waiting: (ID |-> none),
+                  replicas: R, AS > 
+    insertList({T | SL},(propagate write(ID,K,V,TS) from O to R[K] at T)) .  
+
+  rl [ack] :
+    {T,(write(ID,K,V,TS) from O' to O)} 
+    < O : Cohort | database: DB, AS >
+    {T | SL}
+  => 
+    < O : Cohort | database: insert(K,< V, TS >,DB), AS > 
+    insertList({T | SL},delay-msg((reply(ID,ack) from O to O'),T)) .
+
+  crl [recv-ack] :
+    {T, reply(ID,ack) from O' to O}
+    < O : Coord | waiting: (ID |-> VALS),  results: RS, AS > 
+    {T | SL}
+  =>
+    {T | SL}
+    < O : Coord | waiting: TEMP, results: RS, AS >
+  if TEMP := ID |-> VALS ;; ack /\ not quorum2(TEMP) .
+
+  crl [commit-write] :
+    {T, reply(ID,ack) from O' to O}
+    < O : Coord | waiting: (ID |-> VALS),  results: RS, AS > 
+    {T | SL}
+  =>
+    {T | SL}
+    < O : Coord | waiting: empty, results: latest(TEMP, RS, T) , AS >
+    [0.0, issue from O to O, 0]
+  if TEMP := ID |-> VALS ;; ack /\ quorum2(TEMP) .
+
+  rl [silent-issue] :
+    {T, issue from O to O}
+    < O : Coord | ops: ept, AS > 
+    {T | SL}
+  => 
+    < O : Coord | ops: ept, AS > 
+    {T | SL} .
+
+endm

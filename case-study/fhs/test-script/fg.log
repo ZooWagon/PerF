@@ -1,0 +1,387 @@
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Mon Feb  5 18:27:48 2024
+Maude> ==========================================
+rewrite in TEST-M : getTES(initrun16) .
+rewrites: 1227982403 in 229724ms cpu (229724ms real) (5345468 rewrites/second)
+result TimedEvents: (
+commit(13, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.0526808496428259) ; (
+commit(7, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.0654625679580727) ; (
+commit(1, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.0831520697942967) ; (
+commit(4, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.1332820099626533) ; (
+commit(6, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.135636151711366) ; (
+commit(0, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.1383520419769786) ; (
+commit(3, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.1384783176506863) ; (
+commit(2, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 4.4092395577327093) ; (
+commit(12, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.4790163785167964e+1) ; (
+commit(11, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.5096168370023035e+1) ; (
+commit(9, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.518522222684415e+1) ; (
+commit(14, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.5187096940483716e+1) ; (
+commit(15, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.5281287346195949e+1) ; (
+commit(5, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.5282113213276507e+1) ; (
+commit(8, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.5298298090134505e+1) ; (
+commit(10, [[Bview : 1,Bparent : 0,Bqc : << QCtype : highQC,QCview : 0,QCsign :
+    1 >>]]) @ 1.5304293648806325e+1) ; (
+commit-p(3, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    1.7502584849966091e+1) ; (
+commit-p(15, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign
+    : (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]])
+    @ 1.753610269546585e+1) ; (
+commit-p(0, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    1.7598761377213052e+1) ; (
+commit-p(10, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign
+    : (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]])
+    @ 1.7600466288822584e+1) ; (
+commit-p(5, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    1.7601055082255968e+1) ; (
+commit-p(4, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    1.7608865384132805e+1) ; (
+commit-p(13, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign
+    : (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]])
+    @ 1.761160874294427e+1) ; (
+commit-p(14, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign
+    : (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]])
+    @ 1.8077139715506476e+1) ; (
+commit-p(1, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    2.8179541284928419e+1) ; (
+commit-p(11, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign
+    : (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]])
+    @ 2.8513282246990109e+1) ; (
+commit-p(9, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    2.8550254137697333e+1) ; (
+commit-p(8, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    2.8552290037978903e+1) ; (
+commit-p(2, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    2.8666263223546338e+1) ; (
+commit-p(7, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    2.870354605021349e+1) ; (
+commit-p(12, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign
+    : (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]])
+    @ 2.8757372275196442e+1) ; (
+commit-p(6, [[Bview : 4,Bparent : 2,Bqc : << QCtype : aggQC,QCview : 2,QCsign :
+    (0 ^;^ 1 ^;^ 3 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 13 ^;^ 14 ^;^ 15) >>]]) @
+    2.8759584156925669e+1) ; (
+commit-p(0, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    3.0817227255516244e+1) ; (
+commit-p(8, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    3.0852451617376925e+1) ; (
+commit-p(14, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign
+    : (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]])
+    @ 3.0890049881638667e+1) ; (
+commit-p(4, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    3.090240090210364e+1) ; (
+commit-p(5, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    3.0911400962412699e+1) ; (
+commit-p(13, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign
+    : (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]])
+    @ 3.0926512954953409e+1) ; (
+commit-p(7, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    3.0926578650970296e+1) ; (
+commit-p(3, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    3.1217109567880243e+1) ; (
+commit-p(11, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign
+    : (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]])
+    @ 4.1841052431736294e+1) ; (
+commit-p(9, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    4.1900500648337598e+1) ; (
+commit-p(10, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign
+    : (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]])
+    @ 4.19362100584827e+1) ; (
+commit-p(1, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    4.1966955708504393e+1) ; (
+commit-p(15, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign
+    : (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]])
+    @ 4.2006296603427522e+1) ; (
+commit-p(2, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    4.2023909407680129e+1) ; (
+commit-p(6, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign :
+    (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]]) @
+    4.2040653627022252e+1) ; (
+commit-p(12, [[Bview : 7,Bparent : 5,Bqc : << QCtype : aggQC,QCview : 5,QCsign
+    : (1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 15) >>]])
+    @ 4.231366526738411e+1) ; (
+commit-p(12, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4287782250818132e+1) ; (
+commit-p(6, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4309194393529893e+1) ; (
+commit-p(1, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.433489364446941e+1) ; (
+commit-p(4, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4341065935606508e+1) ; (
+commit-p(8, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4358528388136527e+1) ; (
+commit-p(9, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4370260651501702e+1) ; (
+commit-p(5, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4371811723949584e+1) ; (
+commit-p(14, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 4.4805570953678441e+1) ; (
+commit-p(15, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.4787251458746923e+1) ; (
+commit-p(3, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.4882534183882385e+1) ; (
+commit-p(11, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.4931360287161482e+1) ; (
+commit-p(10, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.519642456750455e+1) ; (
+commit-p(2, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.5383293380620692e+1) ; (
+commit-p(13, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.5387682059407204e+1) ; (
+commit-p(0, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.5419743782302632e+1) ; (
+commit-p(7, [[Bview : 10,Bparent : 8,Bqc : << QCtype : aggQC,QCview : 8,QCsign
+    : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 6 ^;^ 8 ^;^ 9 ^;^ 10 ^;^ 12 ^;^ 14 ^;^ 15) >>]])
+    @ 5.5422510533455913e+1) ; (
+commit-p(12, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7562153202419339e+1) ; (
+commit-p(3, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7564007354222539e+1) ; (
+commit-p(0, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7578750350526924e+1) ; (
+commit-p(9, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7585712729391844e+1) ; (
+commit-p(7, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7589317746911618e+1) ; (
+commit-p(5, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7590798326341904e+1) ; (
+commit-p(11, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7593255275937501e+1) ; (
+commit-p(4, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 5.7693051889897411e+1) ; (
+commit-p(10, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8568506031398385e+1) ; (
+commit-p(1, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8631651390337325e+1) ; (
+commit-p(6, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8697511437234681e+1) ; (
+commit-p(2, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8726137593594245e+1) ; (
+commit-p(8, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8742143974128084e+1) ; (
+commit-p(15, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8746220086627702e+1) ; (
+commit-p(13, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8755008330453435e+1) ; (
+commit-p(14, [[Bview : 13,Bparent : 11,Bqc : << QCtype : aggQC,QCview : 11,
+    QCsign : (0 ^;^ 2 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 10 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 6.8762000217714089e+1) ; (
+commit-p(6, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.0542194191850754e+1) ; (
+commit-p(2, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.0864321862257555e+1) ; (
+commit-p(13, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.0905888870730038e+1) ; (
+commit-p(11, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.0935302592543934e+1) ; (
+commit-p(7, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.0938340319088823e+1) ; (
+commit-p(3, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.0985072880055696e+1) ; (
+commit-p(14, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1000759336162048e+1) ; (
+commit-p(15, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1002664787032259e+1) ; (
+commit-p(4, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1035258827947217e+1) ; (
+commit-p(0, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1044904133194549e+1) ; (
+commit-p(9, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1053816950403046e+1) ; (
+commit-p(12, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1064691109476897e+1) ; (
+commit-p(10, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1077638902068571e+1) ; (
+commit-p(5, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1090816982242515e+1) ; (
+commit-p(8, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1094191949133588e+1) ; (
+commit-p(1, [[Bview : 16,Bparent : 14,Bqc : << QCtype : aggQC,QCview : 14,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 5 ^;^ 6 ^;^ 8 ^;^ 10 ^;^ 12 ^;^ 13 ^;^ 14 ^;^
+    15) >>]]) @ 7.1115658420222928e+1) ; (
+commit(12, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,
+    QCsign : 1 >>]]) @ 7.2098470663809849e+1) ; (
+commit(10, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,
+    QCsign : 1 >>]]) @ 7.215167037510443e+1) ; (
+commit(13, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,
+    QCsign : 1 >>]]) @ 7.2195989684037045e+1) ; (
+commit(11, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,
+    QCsign : 1 >>]]) @ 7.220072785501533e+1) ; (
+commit(2, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 7.2209408418516858e+1) ; (
+commit(9, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 7.2212135480675286e+1) ; (
+commit(14, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,
+    QCsign : 1 >>]]) @ 7.2214346716327967e+1) ; (
+commit(6, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 7.2468241408076651e+1) ; (
+commit(4, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.2807324724985676e+1) ; (
+commit(7, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.3050021943488503e+1) ; (
+commit(15, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,
+    QCsign : 1 >>]]) @ 8.3148510179902587e+1) ; (
+commit(3, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.315416822515283e+1) ; (
+commit(1, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.3248925872785094e+1) ; (
+commit(0, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.3280628779008708e+1) ; (
+commit(5, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.328377092153886e+1) ; (
+commit(8, [[Bview : 17,Bparent : 16,Bqc : << QCtype : highQC,QCview : 16,QCsign
+    : 1 >>]]) @ 8.3291812831396783e+1) ; (
+commit-p(3, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5377911625557573e+1) ; (
+commit-p(0, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5414952473457717e+1) ; (
+commit-p(12, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5444202294122974e+1) ; (
+commit-p(2, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5451590724622008e+1) ; (
+commit-p(10, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5462180025043708e+1) ; (
+commit-p(7, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5470402875398179e+1) ; (
+commit-p(15, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.5470790304814798e+1) ; (
+commit-p(5, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 8.554617950143161e+1) ; (
+commit-p(13, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6305291838161693e+1) ; (
+commit-p(4, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6319842785456729e+1) ; (
+commit-p(11, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6330847356551743e+1) ; (
+commit-p(14, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6406049458760236e+1) ; (
+commit-p(8, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6454889106789864e+1) ; (
+commit-p(1, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6479391589670072e+1) ; (
+commit-p(6, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6496209670099049e+1) ; (
+commit-p(9, [[Bview : 20,Bparent : 18,Bqc : << QCtype : aggQC,QCview : 18,
+    QCsign : (0 ^;^ 1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 5 ^;^ 7 ^;^ 8 ^;^ 9 ^;^ 11 ^;^ 15)
+    >>]]) @ 9.6543809751598118e+1) ; (
+commit-p(6, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.8781683721541313e+1) ; (
+commit-p(2, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.8787329324207263e+1) ; (
+commit-p(14, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.8808098536584197e+1) ; (
+commit-p(10, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.8818288507786818e+1) ; (
+commit-p(15, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.8830434500718511e+1) ; (
+commit-p(12, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.8851152402146766e+1) ; (
+commit-p(4, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.885755953991405e+1) ; 
+commit-p(1, [[Bview : 23,Bparent : 21,Bqc : << QCtype : aggQC,QCview : 21,
+    QCsign : (1 ^;^ 2 ^;^ 3 ^;^ 4 ^;^ 6 ^;^ 7 ^;^ 9 ^;^ 11 ^;^ 12 ^;^ 13 ^;^
+    15) >>]]) @ 9.9251170099223799e+1
+Maude> Bye.

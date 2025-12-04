@@ -1,0 +1,90 @@
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		test-l.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	2123036656
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Thu Dec  4 22:12:22 2025
+Server: Running the simulation batches on demand... Please wait.
+Server performed 61 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		test-l.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	1970649388
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+Server: Running the simulation batches on demand... Please wait.
+Server performed 68 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		test-l.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	1162610562
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Thu Dec  4 22:20:57 2025
+Server: Running the simulation batches on demand... Please wait.
+Failed to perform simulation runs.
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		test-l.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	1796378598
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Thu Dec  4 22:21:48 2025
+Server: Running the simulation batches on demand... Please wait.
+Server performed 40 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		test-m.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	1319957562
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+Server: Running the simulation batches on demand... Please wait.
+Server performed 38 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...

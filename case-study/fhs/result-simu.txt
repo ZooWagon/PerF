@@ -1,0 +1,199 @@
+=========================================
+run simulate - fhs - equivocation
+node number 16, evil node from 0 to 5
+-------
+equivocate node num = 0
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006290 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 1635
+avg commit number of 16 nodes: 102.1875
+total run time: 119.87206759877553
+throughput: 0.8524713225272159
+Used time(seconds):610.899
+-------
+equivocate node num = 1
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006302 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 1200
+avg commit number of 16 nodes: 75.0
+total run time: 119.77808250191201
+throughput: 0.6261579617356354
+Used time(seconds):504.613
+-------
+equivocate node num = 2
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006279 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 904
+avg commit number of 16 nodes: 56.5
+total run time: 117.89664702277874
+throughput: 0.47923330668669206
+Used time(seconds):465.442
+-------
+equivocate node num = 3
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006280 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 672
+avg commit number of 16 nodes: 42.0
+total run time: 118.70457811166594
+throughput: 0.3538195465425976
+Used time(seconds):422.455
+-------
+equivocate node num = 4
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006346 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 584
+avg commit number of 16 nodes: 36.5
+total run time: 119.13357818759508
+throughput: 0.3063787771280138
+Used time(seconds):427.498
+-------
+equivocate node num = 5
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006300 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 448
+avg commit number of 16 nodes: 28.0
+total run time: 115.08184609363747
+throughput: 0.24330509937438374
+Used time(seconds):412.866
+=========================================
+run simulate - fhs - partition + equivocation
+node number 16, evil node from 0 to 5
+-------
+equivocate node num = 0
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.007060 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 1316
+avg commit number of 16 nodes: 82.25
+total run time: 120.02593460425896
+throughput: 0.6852685652579077
+Used time(seconds):798.585
+-------
+equivocate node num = 1
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.007130 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 888
+avg commit number of 16 nodes: 55.5
+total run time: 114.90567410222187
+throughput: 0.48300486841603957
+Used time(seconds):620.025
+-------
+equivocate node num = 2
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.007124 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 786
+avg commit number of 16 nodes: 49.125
+total run time: 119.80248169711184
+throughput: 0.41004993639613635
+Used time(seconds):609.933
+-------
+equivocate node num = 3
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.007117 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 526
+avg commit number of 16 nodes: 32.875
+total run time: 120.0056362800906
+throughput: 0.2739454663885157
+Used time(seconds):528.860
+-------
+equivocate node num = 4
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.007161 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 352
+avg commit number of 16 nodes: 22.0
+total run time: 115.68293009410753
+throughput: 0.19017498936189722
+Used time(seconds):487.941
+-------
+equivocate node num = 5
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.007097 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+total commit number of 16 nodes: 320
+avg commit number of 16 nodes: 20.0
+total run time: 118.25891267400048
+throughput: 0.16912044553574734
+Used time(seconds):512.075
+=========================================

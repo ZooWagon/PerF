@@ -1,0 +1,2 @@
+load f-output/init-dns
+rew avgQueryDuration(initConfig) .

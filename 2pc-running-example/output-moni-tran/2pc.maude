@@ -1,0 +1,188 @@
+load ../input-modules/event-2pc.maude
+load ../apfmaude
+load ../probability
+load ../fault-injector
+
+load ../input-modules/2pc-fault-config.maude
+mod FAULT-CONTROLLER is
+  inc APFMAUDE .
+  inc FAULT-INTERFACE .
+  inc FAULT-MSGLOSS .
+  ---   inc FAULT-MSGDUP .
+  ---   inc FAULT-PARTITION .
+  ---   inc FAULT-CRASH .
+  ---   inc FAULT-DELAY .
+  ---   inc FAULT-EQUIVOCATION .
+  ---   inc FAULT-TEMPERING .
+
+  op ctrl : -> Oid .
+  op Controller : -> ActorType .
+
+  --- injected fault behaviors
+  op fbhvs:_ : FaultBehaviorList -> Attribute [ctor] .
+  --- interface
+  op fbhv : -> FaultBehaviorList .
+
+  vars FBL FBL' : FaultBehaviorList . vars FB FB' : FaultBehavior .
+  var GT : Float . var MSG : Msg . var L : Qid .
+  var CO : Content . vars O O' : Oid .
+  var ML-AS : AttributeSet .
+  ---   var MD-AS : AttributeSet .
+  ---   var PT-AS : AttributeSet .
+  ---   var CR-AS : AttributeSet .
+  ---   var DL-AS : AttributeSet .
+  ---   var TP-AS : AttributeSet .
+  ---   var EC-AS : AttributeSet .
+  ceq [GT, CO from O to O', L]  
+    < ctrl : Controller | fbhvs: FBL >
+    < ml : MsgLoss | ML-AS >
+  ---     < msgdup : MsgDup | MD-AS >
+  ---     < pt : Partition | PT-AS >
+  ---     < cr : Crash | CR-AS >
+  ---     < dl : Delay | DL-AS >
+  ---     < tp : Tampering | TP-AS >
+  ---     < ec : Equivocation | EC-AS >
+  = < ctrl : Controller | fbhvs: FBL >
+    < ml : MsgLoss | ML-AS >
+  ---     < msgdup : MsgDup | MD-AS >
+  ---     < pt : Partition | PT-AS >
+  ---     < cr : Crash | CR-AS >
+  ---     < dl : Delay | DL-AS >
+  ---     < tp : Tampering | TP-AS >
+  ---     < ec : Equivocation | EC-AS >
+    (if isSatisfied(FBL, [GT, CO from O to O',L], 
+      < ml : MsgLoss | ML-AS >
+  ---       < msgdup : MsgDup | MD-AS >
+  ---       < pt : Partition | PT-AS >
+  ---       < cr : Crash | CR-AS >
+  ---       < dl : Delay | DL-AS >
+  ---       < tp : Tampering | TP-AS >
+  ---       < ec : Equivocation | EC-AS >
+      ) 
+      then auth([GT, CO from O to O', L], FB)  *** fault behavior authorized   
+      else (CO from O to O') fi)  *** msg released into the system config
+  if FB := topBhv(FBL,[GT, CO from O to O',L],
+    < ml : MsgLoss | ML-AS >
+  ---     < msgdup : MsgDup | MD-AS >
+  ---     < pt : Partition | PT-AS >
+  ---     < cr : Crash | CR-AS >
+  ---     < dl : Delay | DL-AS >
+  ---     < tp : Tampering | TP-AS >
+  ---     < ec : Equivocation | EC-AS >
+    ) .
+
+  --- CO to O', object's local process, no fault
+  eq [GT, CO to O', L]  
+    < ctrl : Controller | fbhvs: FBL >
+  = (CO to O') < ctrl : Controller | fbhvs: FBL > .
+
+  var HDLS : ActorConfig . var FMSG : FMsg . var N : Nat . vars F F' : Float .
+  op topBhv : FaultBehaviorList FMsg ActorConfig -> FaultBehavior .
+  op $topBhv : FaultBehaviorList Nat -> FaultBehavior .
+  op $$topBhv : FaultBehaviorList Float Float FaultBehavior -> FaultBehavior .
+  --- delete not satisfied fbhvs
+  ceq topBhv((FBL ; FB ; FBL'),FMSG, HDLS) = topBhv((FBL ; FBL'),FMSG, HDLS)
+    if not isSatisfied(FB,FMSG,HDLS) .
+  eq topBhv(FBL,FMSG,HDLS) = $topBhv(FBL,9) .
+  --- pick fhbvs with highest priority
+  ceq $topBhv(FBL ; FB ; FBL', N) 
+    = $topBhv(FBL ; FB ; FBL', priority(FB)) if priority(FB) < N .
+  ceq $topBhv(FBL ; FB ; FBL', N) 
+    = $topBhv(FBL ; FBL', priority(FB)) if priority(FB) > N .
+  *** one fbhv with highest priority, output
+  eq $topBhv(FB, N) = FB .
+  *** multiple fbhv with highest priority, randomly choose
+  eq $topBhv(FBL, N) = $$topBhv(FBL,0.0,rand,nullFB) .
+  ceq $$topBhv(FB ; FBL, F, F', FB') = $$topBhv(FBL, F', rand, FB) 
+      if F' > F .
+  ceq $$topBhv(FB ; FBL, F, F', FB') = $$topBhv(FBL, F, rand, FB') 
+      if F' < F .
+  eq $$topBhv(nilFBL,F,F',FB') = FB' .  *** final choice
+
+endm
+
+mod FAULT-INJECTOR is 
+
+  inc SCHEDULER + FAULT-CONTROLLER .
+endm
+
+load ../apfmaude
+
+mod 2PC-INTERFACE is
+  inc FAULT-INJECTOR .
+  inc APFMAUDE .
+
+  sorts Proposal Proposals .
+  ops p1 p2 : -> Proposal .
+  subsort Proposal < Proposals .
+  op nullp : -> Proposals [ctor] .
+  op _;_ : Proposals Proposals -> Proposals [assoc id: nullp] .
+  subsort Proposal < Content .
+
+  sorts MapPB MapPBs .
+  subsort MapPB < MapPBs .
+  op _|->_ : Proposal Bool -> MapPB .
+  op emptyPB : -> MapPBs [ctor] .
+  op _,_ : MapPBs MapPBs -> MapPBs [assoc comm id: emptyPB] .
+endm
+
+mod 2PC is inc 2PC-INTERFACE .
+  inc EVENT-2PC .
+  inc FAULT-INJECTOR .
+
+  ops vote decision : Proposal Bool -> Content .
+  op start : -> Content .
+    
+  vars O O' : Oid .  vars OS OS' : OidSet .  var P : Proposal .  vars V V' : Bool .
+  vars PS PS' : Proposals . vars RS VS : MapPBs . var AS : AttributeSet .
+  var AC : ActorConfig . var CO : Content .
+  --- class Coord  | proposals : Proposals,   cohorts : OidSet, 
+  ---                waiting : OidSet, results : Map{Proposal,Bool} .
+  --- class Cohort | votes : Map{Proposal,Bool} .
+
+  op proposals:_ : Proposals -> Attribute .
+  op cohorts:_ : OidSet -> Attribute .
+  op waiting:_ : OidSet -> Attribute .
+  op results:_ : MapPBs -> Attribute .
+  op votes:_ : MapPBs -> Attribute .
+
+  ops Coord Cohort : -> ActorType .
+  op d : -> Float .
+
+  crl [start] : (start to O)
+                < O : Coord | proposals: (P ; PS), waiting: empty, 
+                  cohorts: OS, results: RS >
+    < moni : Monitor | events: @TES:TimedEvents > { @GTSL:Float | @SLSL:ScheduleList }
+            => < moni : Monitor | events: (@TES:TimedEvents ; (propose(P) @ @GTSL:Float)) > { @GTSL:Float | @SLSL:ScheduleList }
+     AttachRuleLabel('start,   < O : Coord | proposals: (P ; PS), waiting: OS, 
+                  cohorts: OS, results: (RS , (P |-> true)) >
+                    (propagate P from O to OS) 
+          ) if not exist(RS,P) .
+  op exist : MapPBs Proposal -> Bool .
+  eq exist((RS, (P |-> V)),P) = true .
+  eq exist(RS,P) = false [owise] .
+
+  eq (start to O) < O : Coord | proposals: nullp, AS >
+  = < O : Coord | proposals: nullp, AS > .
+
+  rl [vote] : (P from O' to O)  < O : Cohort | votes: (VS , (P |-> V)) >
+            => AttachRuleLabel('vote,     < O : Cohort | votes: (VS , (P |-> V)) >  (vote(P,V) from O to O') ) .
+
+  rl [collect] : (vote(P,V') from O' to O)
+                < O : Coord | waiting: (O' OS), results: (RS, P |-> V), AS >
+      => AttachRuleLabel('collect,    < O : Coord | waiting: OS, results: (RS, P |-> (V and V')), AS > ) .
+
+  rl [decision] : < O : Coord | proposals: (P ; PS), waiting: empty, 
+                                cohorts: OS, results: (RS, P |-> V) >
+    < moni : Monitor | events: @TES:TimedEvents > { @GTSL:Float | @SLSL:ScheduleList }
+            => < moni : Monitor | events: (@TES:TimedEvents ; ((finish(P) , curResult(RS, P |-> V)) @ @GTSL:Float)) > { @GTSL:Float | @SLSL:ScheduleList }
+     AttachRuleLabel('decision,   < O : Coord | proposals: PS, waiting: empty, 
+                                cohorts: OS, results: (RS, P |-> V) >  
+            (start to O) (propagate decision(P,V) from O to OS) ) . 
+  eq eagerEnabled(< O : Coord | proposals: (P ; PS), waiting: empty, cohorts: OS, results: (RS, P |-> V) > AC ) = true .
+
+  rl [log] : (decision(P,V) from O' to O)  
+             < O : Cohort | votes: (VS, P |-> V') >
+            => AttachRuleLabel('log,   < O : Cohort | votes: (VS, P |-> V) > ) .
+
+endm

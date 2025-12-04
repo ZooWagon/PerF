@@ -1,0 +1,2158 @@
+load ../input-modules/_aux
+load ../input-modules/prelim
+
+mod DNS is
+  inc AUX + MSG + PARAMETERS .
+
+  --- Variables
+  var C : Config .
+  vars CL RSV NS ADDR ADDR' MON : Address .
+  vars ID ID' : Id .
+  var IDL : IdList .
+  var TAQL : TupleAddrQueryList .
+  var TARL : TupleAddrRespList .
+  var TNRL : TupleNameRecsList .
+  var TSAL : TupleSlistArgsList .
+  vars NAME NAME' NAME'' NAME''' QNAME SNAME SNAME' QMIN_SNAME SNAME_FULL SNAME_FULL' : Name .
+  var Q : Query .
+  var QTYPE : RType .
+  var QS : List{Query} .
+  vars QSTATE QSTATE' : QueryState .
+  vars QSS QSS' QSS'' QSS''' QSS_KNOWN_ADDR QSS_UNKNOWN_ADDR QSS_SEND QSS_ABORT QSS_FAILED QSS_EMPTY QSS_NONEMPTY : QueryStateSet .
+  var QMIN_STATE : QMinState .
+  vars CACHE CACHE' CACHE'' CACHE_UNEXPIRED CACHE_TMP CACHE_TMP' : Cache .
+  vars NXDOMAIN_CACHE NXDOMAIN_CACHE' NXDOMAIN_CACHE_UNEXPIRED NXDOMAIN_CACHE_TMP : NxdomainCache .
+  vars NODATA_CACHE NODATA_CACHE' NODATA_CACHE_UNEXPIRED NODATA_CACHE_TMP : NodataCache .
+  vars R R' : Record .
+  vars RS RS' : List{Record} .
+  var DB : List{Record} .
+  var QUEUE : Queue .
+  vars ANS ANS' ANS'' ANS''' AUTH ADD CACHE_HIT ANS_CHAIN : List{Record} .
+  vars SBELT SLIST SLIST' : ZoneState .
+  vars NA NA' NA'' : Map{Name, Address} .
+  vars IAF IAF' : IdAddrFloatMap .
+  vars AF AF' : AddrFloatMap .
+  vars IF IF' : IdFloatMap .
+  var IALMAP : IdAddrListMap .
+  vars IN IN' IN'' : IdNatMap .
+  vars STATE STATE' : AttributeSet .
+  var RCODE : Nat .
+  vars N N' N'' : Nat .
+  var B : Bool .
+  vars T T' : Float . --- timestamp
+  vars F TTL TTL' : Float .
+  var RESP : Response .
+
+  --- "Drop" messages that are addressed to an inexistent actor. Eventually, a timeout will be triggered at the
+  --- resolver (if timeouts are enabled).
+  --- This equation can be "enabled" by setting the dropMsgsForNXActors? parameter.
+  ceq run({ T, MSG:Content from ADDR' to ADDR } C, F)
+    = run(C, F)
+    if dropMsgsForNXActors? /\
+       not(hasActorWithAddr(C, ADDR)) .
+
+  ----------------
+  --- [CLIENT] ---
+  ----------------
+  --- > Send next query from local list to the resolver after receiving an artificial "start" signal message.
+  --- Assumption: One single resolver for each client.
+  rl [client-start] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', clientQSent: N, clQueryLog: TAQL, STATE' >
+  < CL : Client | queries: (query(ID, QNAME, QTYPE) QS), resolver: RSV, STATE >
+  {T, start to CL }
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incr(ID, CL, IAF') else IAF' fi),
+                    totalSent: incrAF(CL, AF'),
+                    clientQSent: s N,
+                    clQueryLog: (if monitorQueryLog? then tupleAddrQuery(CL, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    STATE' >
+  < CL : Client | queries: QS, resolver: RSV, STATE >
+  [delay, query(ID, QNAME, QTYPE) from CL to RSV, drop?] .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive client query that can be answered from cache. Send response to client.
+  --- (No name servers are contacted in this case.)
+  --- [Alg. 5.3.3, step 1]
+  crl [resolver-reply-local] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQStartTime: IF,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     STATE >
+  {T, query(ID, QNAME, QTYPE) from CL to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: incrAF(RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL, ANS_CHAIN) TNRL else TNRL fi),
+                    clientQStartTime: (idFloatEntry(ID, T), IF),
+                    clientQEndTime: (idFloatEntry(ID, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: filterCacheTTLGreaterThan(CACHE_UNEXPIRED, T),
+                     nxdomainCache: filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE_UNEXPIRED, T),
+                     nodataCache: filterNodataCacheTTLGreaterThan(NODATA_CACHE_UNEXPIRED, T),
+                     STATE >
+  [delay, convertTTLAbsToRelResponse(RESP, T) from RSV to CL, drop?]
+  if
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Follow rewrites in cache
+     SNAME_FULL := initSNAME(QNAME, QTYPE, filterCacheCred(CACHE_UNEXPIRED, rsvMinCacheCredClient), nil) /\
+     ANS_CHAIN := initAnsChain(QNAME, QTYPE, filterCacheCred(CACHE_UNEXPIRED, rsvMinCacheCredClient), nil) /\
+     --- If QTYPE matches CNAME and ANS_CHAIN starts with a DNAME, the synthesized CNAME record answers the query
+     --- We do not want to cache the synthesized CNAME, so we create a temporary cache for the responseFromCache
+     CACHE_TMP := if rtype(head(ANS_CHAIN)) == dname and match(QTYPE, cname)
+                    then updateCacheCred(CACHE_UNEXPIRED, dnameSynthesis(QNAME, head(ANS_CHAIN)),
+                            rsvMinCacheCredClient, 0.0)
+                    else CACHE_UNEXPIRED
+                  fi /\
+     --- Cache hit for SNAME_FULL
+     RESP := responseFromCache(ID, SNAME_FULL, QTYPE, ANS_CHAIN,
+               CACHE_TMP, NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED,
+               rsvMinCacheCredClient, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive client query that cannot be answered (fully) from cache.
+  --- If there is at least one name server with known address, send the query to one of them.
+  --- If there are name servers with unknown addresses, create new queries to resolve their addresses. The unknown
+  --- addresses are resolved even when there are (some) name servers with known addresses.
+  --- [Alg. 5.3.3, steps 2-3]
+  crl [resolver-recv-query] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    rsvSlistLog: TSAL,
+                    clientQStartTime: IF,
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     sbelt: SBELT,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: QSS',
+                     STATE >
+  {T, query(ID, QNAME, QTYPE) from CL to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS((QSS_SEND ;; QSS_FAILED), RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL, ANS_CHAIN) TNRL else TNRL fi),
+                    rsvSlistLog: (if monitorSlistArgsLog? then tupleSlistArgs(SNAME_FULL, CACHE_UNEXPIRED,
+                                     NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED, SBELT, QNAME) TSAL else TSAL fi),
+                    clientQStartTime: (idFloatEntry(ID, T), IF),
+                    STATE' >
+  < RSV : Resolver | cache: filterCacheTTLGreaterThan(CACHE_UNEXPIRED, T),
+                     nxdomainCache: filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE_UNEXPIRED, T),
+                     nodataCache: filterNodataCacheTTLGreaterThan(NODATA_CACHE_UNEXPIRED, T),
+                     sbelt: SBELT,
+                     workBudget: IN'',
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if rsvOverallTimeout?
+    --- add noise to avoid non-determinism
+    then [rsvOverallTimeout + genRandom(0.0, 0.0001),overallTimeout(query(ID, QNAME, QTYPE), CL) from RSV to RSV, 0]
+    else null
+  fi
+  if
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Follow rewrites in cache
+     SNAME_FULL := initSNAME(QNAME, QTYPE, filterCacheCred(CACHE_UNEXPIRED, rsvMinCacheCredClient), nil) /\
+     ANS_CHAIN := initAnsChain(QNAME, QTYPE, filterCacheCred(CACHE_UNEXPIRED, rsvMinCacheCredClient), nil) /\
+     --- If QTYPE matches CNAME and ANS_CHAIN starts with a DNAME, the synthesized CNAME record answers the query
+     --- Thus, we create a temporary cache with the synthesized CNAME for the responseFromCache
+     CACHE_TMP := if rtype(head(ANS_CHAIN)) == dname and match(QTYPE, cname)
+                    then updateCacheCred(CACHE_UNEXPIRED, dnameSynthesis(QNAME, head(ANS_CHAIN)),
+                            rsvMinCacheCredClient, 0.0)
+                    else CACHE_UNEXPIRED
+                  fi /\
+     --- Cache miss for SNAME_FULL
+     RESP := responseFromCache(ID, SNAME_FULL, QTYPE, ANS_CHAIN,
+               CACHE_TMP, NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED,
+               rsvMinCacheCredClient, QNAME
+             ) /\
+     rcode(RESP) == cacheMissRcode /\
+     --- Init SLIST
+     < NAME NA > := initSLIST(SNAME_FULL, CACHE_UNEXPIRED, NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED, SBELT, QNAME) /\
+     --- Init QMIN state
+     QMIN_SNAME := initQMinSNAME(NAME, qminState(SNAME_FULL, maxMinimiseCount, minimiseOneLab, false),
+                    NODATA_CACHE_UNEXPIRED, NAME) /\
+     QMIN_STATE := initQMinState(NAME, qminState(SNAME_FULL, maxMinimiseCount, minimiseOneLab, false),
+                    NODATA_CACHE_UNEXPIRED, NAME) /\
+     --- Create query and resolver subqueries
+     QSTATE := queryState(query(ID, QNAME, QTYPE), CL, QMIN_SNAME, ID .. init, QMIN_STATE, ANS_CHAIN, < NAME NA >) /\
+     QSS'' := addResolverSubqueries(QSTATE, RSV, CACHE_UNEXPIRED, NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED, SBELT) ;;
+                QSS /\
+     --- Update work budget
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS'') /\
+     IN' := (idNatEntry(ID, configWorkBudget), IN) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN'') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN') /\
+     --- Failed queries: Client queries without known addresses for which a follow-up query has been aborted due to
+     --- exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ---------------------
+  --- [NAME SERVER] ---
+  ---------------------
+  --- > Receive query from resolver, "match down" in the database and send response.
+  --- The response can either be authoritative or non-authoritative (referral).
+  --- In both cases, there may be CNAME records in the Answer section.
+  --- [Alg. 4.3.2, steps 2-3]
+  --- Notes:
+  ---  * This rule is only applicable when name server resource bounds are disabled (nsResourceBounds? parameter)
+  ---  * The query is answered immediately, with zero processing delay.
+  crl [nameserver-recv-query-unbounded] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', nsQueryLog: TAQL, nsRespLog: TARL, STATE' >
+  < NS : Nameserver | db: DB, STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, NS, IAF') else IAF' fi),
+                    totalRcv: incrAF(NS, AF),
+                    totalSent: incrAF(NS, AF'),
+                    nsQueryLog: (if monitorQueryLog? then tupleAddrQuery(NS, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    nsRespLog: (if monitorQueryLog? then tupleAddrResp(NS, RESP) TARL else TARL fi),
+                    STATE' >
+  < NS : Nameserver | db: DB, STATE >
+  [delay, RESP from NS to RSV, drop?]
+  if
+     --- rule only applicable when resource bounds are disabled
+     not(nsResourceBounds?) /\
+     RESP := matchDown(ID, QNAME, QTYPE, DB) .
+
+  ---------------------
+  --- [NAME SERVER] ---
+  ---------------------
+  --- > Receive query from resolver. Insert into queue or drop depending on queue size.
+  --- If the queue was empty before, send a trigger message to self to model processing time.
+  --- Notes:
+  ---  * This rule is only applicable when name server resource bounds are enabled (nsResourceBounds? parameter)
+  crl [nameserver-recv-query] :
+  < MON : Monitor | msgsRcv: IAF, totalRcv: AF, STATE' >
+  < NS : Nameserver | db: DB, queue: QUEUE, STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    totalRcv: incrAF(NS, AF),
+                    STATE' >
+  < NS : Nameserver | db: DB,
+                      --- enqueue or drop depending on queue size
+                      queue: if queueSize(QUEUE) < nsQueueSize then QUEUE (queueEntry(query(ID, QNAME, QTYPE), RSV)) else QUEUE fi,
+                      STATE >
+  --- if queue was empty, send trigger message to self
+  (if queueSize(QUEUE) == 0 then [nsReqProcDelay, processNextQuery from NS to NS, 0] else null fi)
+  if nsResourceBounds? . --- rule only applicable when resource bounds are enabled
+
+  ---------------------
+  --- [NAME SERVER] ---
+  ---------------------
+  --- > Receive own trigger message, "match down" in the database and send response.
+  --- If there are more queries in the queue, send a trigger message to self to model processing time.
+  --- [Alg. 4.3.2, steps 2-3]
+  --- Notes:
+  ---  * This rule is only applicable when name server resource bounds are enabled (nsResourceBounds? parameter)
+  crl [nameserver-process-query] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', nsQueryLog: TAQL, nsRespLog: TARL, STATE' >
+  < NS : Nameserver | db: DB, queue: (queueEntry(query(ID, QNAME, QTYPE), ADDR) QUEUE), STATE >
+  {T, processNextQuery from NS to NS}
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incr(ID, NS, IAF') else IAF' fi),
+                    totalSent: incrAF(NS, AF'),
+                    nsQueryLog: (if monitorQueryLog? then tupleAddrQuery(NS, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    nsRespLog: (if monitorQueryLog? then tupleAddrResp(NS, RESP) TARL else TARL fi),
+                    STATE' >
+  < NS : Nameserver | db: DB, queue: QUEUE, STATE >
+  [delay, RESP from NS to ADDR, drop?]
+  --- if the queue is not empty, send new trigger message
+  (if QUEUE =/= nilQueue then [nsReqProcDelay, processNextQuery from NS to NS, 0] else null fi)
+  if
+     --- rule only applicable when resource bounds are enabled
+     nsResourceBounds? /\
+     RESP := matchDown(ID, QNAME, QTYPE, DB) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative answer from name server that answers a client query (positively or negatively).
+  --- Insert the the data into cache and send response to client.
+  --- [Alg. 5.3.3, step 4a]
+  --- Notes:
+  ---  * The check whether the response answers the question considers only the data in the response. The cache is not
+  ---    checked.
+  ---  * CNAME/DNAME responses are handled in separate rules, even if the query can be "answered" by such a response.
+  ---  * QMIN: This rule applies in the following cases:
+  ---          * The resolver is done with QMIN, i.e., it knows the definite authoritative name servers, or
+  ---          * it has sent the original QNAME and the original QTYPE coincides with the QTYPE selected for QMIN, or
+  ---          * it has sent the original QNAME, the original QTYPE matches CNAME, and it received a CNAME response, or
+  ---          * the response is an NXDOMAIN response, which allows to conclude that the original QNAME does not exist.
+  ---  * Any ongoing subqueries of the (now answered) client query will still be resolved.
+  ---  * Data ranking: Note that we consider only data with sufficient credibility score, see RFC 2181, §5.4.1.
+  crl [resolver-recv-ans-for-client] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: incrAF(RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME, ANS') TNRL else TNRL fi),
+                    clientQEndTime: (idFloatEntry(ID, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: if hasFollowUpQueryInQSSForId(ID, QSS ;; QSS') then IN else removeFromIdNatMap(ID, IN) fi,
+                     blockedQueries: QSS,
+                     sentQueries: QSS',
+                     STATE >
+  [delay, convertTTLAbsToRelResponse(RESP, T) from RSV to ADDR, drop?]
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Rule only applies for client queries
+     ADDR =/= RSV /\
+     --- Either QMIN is done, or we queried the full SNAME with the correct type (or we got a CNAME and that matches
+     --- the QTYPE), or it is an NXDOMAIN response
+     B or
+       (SNAME == SNAME_FULL and
+         (qminQTYPE == QTYPE or (rtype(head(ANS)) == cname and match(QTYPE, cname)))
+       ) or
+       RCODE == 3 /\
+     --- Rule does not apply for CNAME responses
+     rtype(head(ANS)) =/= cname or match(QTYPE, cname) /\
+     --- Rule does not apply for DNAME responses (in a DNAME response, the owner name is different from SNAME)
+     ANS == nil or ownerName(head(ANS)) == SNAME /\
+     --- Create temporary cache from response
+     CACHE_TMP := updateCacheAuthAns(nilCache, ANS, T) /\
+     NXDOMAIN_CACHE_TMP := updateNxdomainCache(nilNxdomainCache, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE_TMP := updateNodataCache(nilNodataCache, SNAME, QTYPE, ANS, AUTH, RCODE, T) /\
+     --- Cache hit in temporary cache (i.e., the response answers the query)
+     RESP := responseFromCache(ID, SNAME, QTYPE, ANS',
+               CACHE_TMP, NXDOMAIN_CACHE_TMP, NODATA_CACHE_TMP,
+               rsvMinCacheCredClient, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, ANS, T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME, QTYPE, ANS, AUTH, RCODE, T) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative answer from name server that answers a resolver subquery (positively or negatively).
+  --- Insert the the data into cache and update the SLISTs of the blocked/sentQueries.
+  --- [Alg. 5.3.3, step 4a]
+  --- Notes:
+  ---  * This rule does not apply for CNAME/DNAME responses, even if the query can be "answered" by such a response.
+  ---    CNAME/DNAME responses are handled in separate rules.
+  ---  * QMIN: This rule applies in the following cases:
+  ---          * The resolver is done with QMIN, i.e., it knows the definite authoritative name servers, or
+  ---          * it has sent the original QNAME and the original QTYPE coincides with the QTYPE selected for QMIN, or
+  ---          * the response is an NXDOMAIN response, which allows to conclude that the original QNAME does not exist.
+  ---  * Updating the SLISTs can either lead to queries being "unblocked" or to queries needing to be aborted because
+  ---    no name server remains.
+  ---  * Data ranking: Note that we consider only data with sufficient credibility score, see RFC 2181, §5.4.1.
+  crl [resolver-recv-ans-for-resolver] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME, ANS') TNRL else TNRL fi),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: cleanUpWorkBudget(IN',
+                                  filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT) ;; QSS_SEND ;; QSS'''),
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'''),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Either QMIN is done, or we queried the full SNAME with the correct type, or it is an NXDOMAIN response
+     B or (SNAME == SNAME_FULL and qminQTYPE == QTYPE) or RCODE == 3 /\
+     --- Rule does not apply for CNAME responses (note that the resolver should never create queries for type CNAME)
+     rtype(head(ANS)) =/= cname or match(QTYPE, cname) /\
+     --- Rule does not apply for DNAME responses (in a DNAME response, the owner name is different from SNAME)
+     ANS == nil or ownerName(head(ANS)) == SNAME /\
+     --- Create temporary cache from response
+     CACHE_TMP := updateCacheAuthAns(nilCache, ANS, T) /\
+     NXDOMAIN_CACHE_TMP := updateNxdomainCache(nilNxdomainCache, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE_TMP := updateNodataCache(nilNodataCache, SNAME, QTYPE, ANS, AUTH, RCODE, T) /\
+     --- Cache hit in temporary cache (i.e., the response answers the query)
+     RESP := responseFromCache(ID, SNAME, QTYPE, ANS',
+               CACHE_TMP, NXDOMAIN_CACHE_TMP, NODATA_CACHE_TMP,
+               rsvMinCacheCredResolver, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, ANS, T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME, QTYPE, ANS, AUTH, RCODE, T) /\
+     --- Update the SLISTs of all pending queries
+     pairQSS(QSS'', QSS''') := updateSLISTsOfQSSs(QSS, QSS', RESP) /\
+     --- Split according to SLISTs, update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSS'') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries that have no name servers left, or client queries without known addresses for
+     --- which a follow-up query has been aborted due to exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort(QSS_EMPTY, QSS_EMPTY) ;;
+                   filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative CNAME answer from name server that answers a client query (positively or negatively).
+  --- Insert the the data into cache and send response to client.
+  --- [Alg. 5.3.3, step 4c + step 1 (cache lookup)]
+  --- Notes:
+  ---  * This rule applies in the case where the resolver receives a CNAME response and can then answer the rewritten
+  ---    query in the subsequent cache lookup. This may be possible either because of other data contained in the
+  ----   response, or because the cache already contains data that allows to answer the rewritten query.
+  ---  * "CNAME response" does not include responses to queries for QTYPEs that match CNAME.
+  ---  * QMIN: This rule applies when QMIN is done or the original QNAME was sent, i.e., the CNAME can be followed.
+  ---  * Any ongoing subqueries of the (now answered) client query will still be resolved.
+  ---  * Data ranking: Note that we consider only data with sufficient credibility score, see RFC 2181, §5.4.1.
+  crl [resolver-recv-cname-reply-for-client-answered] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: incrAF(RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL', ANS_CHAIN) TNRL else TNRL fi),
+                    clientQEndTime: (idFloatEntry(ID, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: if hasFollowUpQueryInQSSForId(ID, QSS ;; QSS') then IN else removeFromIdNatMap(ID, IN) fi,
+                     blockedQueries: QSS,
+                     sentQueries: QSS',
+                     STATE >
+  [delay, convertTTLAbsToRelResponse(RESP, T) from RSV to ADDR, drop?]
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Rule only applies for client queries
+     ADDR =/= RSV /\
+     --- Either QMIN is done or we queried the full SNAME
+     B or SNAME == SNAME_FULL /\
+     --- Rule only applies for CNAME responses to non-CNAME queries
+     not(match(QTYPE, cname)) /\
+     < SNAME, cname, TTL, NAME' > RS := ANS /\
+     --- Convert relative to absolute TTL
+     R' := < SNAME, cname, TTL + T, NAME' > /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, ANS, T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME,
+                        if B then QTYPE else qminQTYPE fi, ANS, AUTH, RCODE, T) /\
+     --- Follow rewrites in cache, starting from the canonical name of the first CNAME in the Answer section
+     SNAME_FULL' := initSNAME(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredClient), ANS' R') /\
+     ANS_CHAIN := initAnsChain(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredClient), ANS' R') /\
+     --- Cache hit for SNAME_FULL'
+     RESP := responseFromCache(ID, SNAME_FULL', QTYPE, ANS_CHAIN,
+               CACHE'', NXDOMAIN_CACHE', NODATA_CACHE',
+               rsvMinCacheCredClient, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative CNAME answer from name server that answers a resolver subquery (positively or negatively).
+  --- Insert the the data into cache and update the SLISTs of the blocked/sentQueries.
+  --- [Alg. 5.3.3, step 4c + step 1 (cache lookup)]
+  --- Notes:
+  ---  * This rule applies in the case where the resolver receives a CNAME response and can then answer the rewritten
+  ---    query in the subsequent cache lookup. This may be possible either because of other data contained in the
+  ----   response, or because the cache already contains data that allows to answer the rewritten query.
+  ---  * "CNAME response" does not include responses to queries for QTYPEs that match CNAME.
+  ---  * Updating the SLISTs can either lead to queries being "unblocked" or to queries needing to be aborted because
+  ---    no name server remains.
+  ---  * QMIN: This rule applies when QMIN is done or the original QNAME was sent, i.e., the CNAME can be followed.
+  ---  * Data ranking: Note that we consider only data with sufficient credibility score, see RFC 2181, §5.4.1.
+  crl [resolver-recv-cname-reply-for-resolver-answered] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL', ANS_CHAIN) TNRL else TNRL fi),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: cleanUpWorkBudget(IN',
+                                  filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT) ;; QSS_SEND ;; QSS'''),
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'''),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Either QMIN is done or we queried the full SNAME
+     B or SNAME == SNAME_FULL /\
+     --- Rule only applies for CNAME responses to non-CNAME queries (resolver should never create CNAME queries, anyway)
+     not(match(QTYPE, cname)) /\
+     < SNAME, cname, TTL, NAME' > RS := ANS /\
+     --- Convert relative to absolute TTL
+     R' := < SNAME, cname, TTL + T, NAME' > /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, ANS, T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME,
+                        if B then QTYPE else qminQTYPE fi, ANS, AUTH, RCODE, T) /\
+     --- Follow rewrites in cache, starting from the canonical name of the first CNAME in the Answer section
+     SNAME_FULL' := initSNAME(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredResolver), ANS' R') /\
+     ANS_CHAIN := initAnsChain(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredResolver), ANS' R') /\
+     --- Cache hit for SNAME_FULL'
+     RESP := responseFromCache(ID, SNAME_FULL', QTYPE, ANS_CHAIN,
+               CACHE'', NXDOMAIN_CACHE', NODATA_CACHE',
+               rsvMinCacheCredResolver, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode /\
+     --- Update the SLISTs of all pending queries
+     pairQSS(QSS'', QSS''') := updateSLISTsOfQSSs(QSS, QSS', RESP) /\
+     --- Split according to SLISTs, update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSS'') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries that have no name servers left, or client queries without known addresses for
+     --- which a follow-up query has been aborted due to exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort(QSS_EMPTY, QSS_EMPTY) ;;
+                   filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative CNAME answer from name server that does not answer a (client or resolver) query.
+  --- Rewrite the query, insert the the data into cache, and restart for the rewritten query.
+  --- [Alg. 5.3.3, step 4c + step 1 (cache lookup)]
+  --- Notes:
+  ---  * This rule applies for both client and resolver queries.
+  ---  * This rule applies in the case where the resolver receives a CNAME response but cannot answer the rewritten
+  ---    query in the subsequent cache lookup.
+  ---  * "CNAME response" does not include responses to queries for QTYPEs that match CNAME.
+  ---  * A response may contain CNAMEs/DNAMEs in the Answer section and a delegation for the (last) canonical name in the
+  ---    Authority section, i.e., both cases 4b and 4c of the algorithm apply.
+  ---  * QMIN: This rule applies when QMIN is done or the original QNAME was sent, i.e., the CNAME can be followed.
+  ---  * Data ranking: Note that the credibility requirements may differ for client queries and resolver subqueries.
+  crl [resolver-recv-cname-reply-not-answered] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    rsvSlistLog: TSAL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     sbelt: SBELT,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS((QSS_SEND ;; QSS_FAILED), RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL', ANS_CHAIN) TNRL else TNRL fi),
+                    rsvSlistLog: (if monitorSlistArgsLog? then tupleSlistArgs(SNAME_FULL', CACHE'', NXDOMAIN_CACHE',
+                                    NODATA_CACHE', SBELT, QNAME) TSAL else TSAL fi),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     sbelt: SBELT,
+                     workBudget: IN',
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Either QMIN is done or we queried the full SNAME
+     B or SNAME == SNAME_FULL /\
+     --- Rule only applies for CNAME responses to non-CNAME queries
+     not(match(QTYPE, cname)) /\
+     < SNAME, cname, TTL, NAME' > RS := ANS /\
+     --- Convert relative to absolute TTL
+     R' := < SNAME, cname, TTL + T, NAME' > /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, ANS, T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME,
+                        if B then QTYPE else qminQTYPE fi, ANS, AUTH, RCODE, T) /\
+     --- Follow rewrites in cache, starting from the canonical name of the first CNAME in the Answer section
+     SNAME_FULL' := initSNAME(NAME', QTYPE, filterCacheCred(CACHE'',
+                      if ADDR == RSV then rsvMinCacheCredResolver else rsvMinCacheCredClient fi), ANS' R') /\
+     ANS_CHAIN := initAnsChain(NAME', QTYPE, filterCacheCred(CACHE'',
+                    if ADDR == RSV then rsvMinCacheCredResolver else rsvMinCacheCredClient fi), ANS' R') /\
+     --- Cache miss for SNAME_FULL'
+     RESP := responseFromCache(ID, SNAME_FULL', QTYPE, ANS_CHAIN,
+               CACHE'', NXDOMAIN_CACHE', NODATA_CACHE',
+               if ADDR == RSV then rsvMinCacheCredResolver else rsvMinCacheCredClient fi,
+               QNAME
+             ) /\
+     rcode(RESP) == cacheMissRcode /\
+     --- Init SLIST
+     < NAME NA > := initSLIST(SNAME_FULL', CACHE'', NXDOMAIN_CACHE', NODATA_CACHE', SBELT, QNAME) /\
+     --- Init QMIN state
+     QMIN_SNAME := initQMinSNAME(NAME, qminState(SNAME_FULL', maxMinimiseCount, minimiseOneLab, false),
+                    NODATA_CACHE', NAME) /\
+     QMIN_STATE := initQMinState(NAME, qminState(SNAME_FULL', maxMinimiseCount, minimiseOneLab, false),
+                    NODATA_CACHE', NAME) /\
+     --- Create rewritten query and resolver subqueries
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, QMIN_SNAME, ID' .. cn, QMIN_STATE, ANS_CHAIN, < NAME NA >) /\
+     QSS'' := addResolverSubqueries(QSTATE', RSV, CACHE'', NXDOMAIN_CACHE', NODATA_CACHE', SBELT) ;; QSS /\
+     --- Update work budget
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS'') /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries without known addresses for which a follow-up query has been aborted due to
+     --- exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative DNAME answer from name server that answers a client query (positively or negatively).
+  --- Insert the the data into cache and send response to client.
+  --- [RFC 6672, §3.4.1, step 4D] and [RFC 9156, §3, step (6b)]
+  --- Notes:
+  ---  * This rule applies in the case where the resolver receives a DNAME response and can then answer the rewritten
+  ---    query in the subsequent cache lookup. This may be possible either because of other data contained in the
+  ----   response, or because the cache already contains data that allows to answer the rewritten query.
+  ---  * A "DNAME answer" here means that DNAME substitution must be performed.
+  ---    In our model, this is the case if the first record in the Answer section is a DNAME record and its owner does
+  ---    not match the queried name, but note that the specification does not impose such an ordering of the records.
+  ---    Note also that in general, the Answer section may contain a chain of ("real" or synthesized) CNAME and DNAME
+  ---    records.
+  ---  * We ignore the fact that DNAME substitution can produce illegal target names (exceeding the maximum length).
+  ---  * QMIN: DNAME responses are treated the same no matter if the query was for a minimized QNAME.
+  ---  * Any ongoing subqueries of the (now answered) client query will still be resolved.
+  ---  * Data ranking: Note that we consider only data with sufficient credibility score, see RFC 2181, §5.4.1.
+  crl [resolver-recv-dname-reply-for-client-answered] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: incrAF(RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL', ANS_CHAIN) TNRL else TNRL fi),
+                    clientQEndTime: (idFloatEntry(ID, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: if hasFollowUpQueryInQSSForId(ID, QSS ;; QSS') then IN else removeFromIdNatMap(ID, IN) fi,
+                     blockedQueries: QSS,
+                     sentQueries: QSS',
+                     STATE >
+  [delay, convertTTLAbsToRelResponse(RESP, T) from RSV to ADDR, drop?]
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Rule only applies for client queries
+     ADDR =/= RSV /\
+     --- Rule only applies for DNAME responses (note that if the owner of the DNAME matches SNAME, it is not a DNAME
+     --- response!)
+     R RS := ANS /\
+     < NAME'', dname, TTL, NAME''' > := R /\
+     NAME'' =/= SNAME /\
+     RS' := if RS == nil then nil else tail(RS) fi /\
+     --- Convert relative to absolute TTL
+     R' := < NAME'', dname, TTL + T, NAME''' > /\
+     --- DNAME synthesis for the full SNAME because the query may have been for a minimized SNAME
+     < SNAME_FULL, cname, TTL', NAME' > := dnameSynthesis(SNAME_FULL, R') /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response (but note that we use the synthesized CNAME for SNAME_FULL)
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, R < SNAME_FULL, cname, TTL, NAME' > RS', T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME,
+                        if B then QTYPE else qminQTYPE fi, ANS, AUTH, RCODE, T) /\
+     --- Follow rewrites in cache, starting from the canonical name of the synthesized CNAME,
+     --- unless QTYPE matches CNAME (then we already have the answer)
+     SNAME_FULL' := if match(QTYPE, cname)
+                      then SNAME_FULL
+                      else initSNAME(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredClient),
+                              ANS' R' < SNAME_FULL, cname, TTL', NAME' >)
+                    fi /\
+     ANS_CHAIN := if match(QTYPE, cname)
+                    then ANS' R'
+                    else initAnsChain(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredClient),
+                            ANS' R' < SNAME_FULL, cname, TTL', NAME' >)
+                    fi /\
+     --- Cache hit for SNAME_FULL'
+     RESP := responseFromCache(ID, SNAME_FULL', QTYPE, ANS_CHAIN,
+               CACHE'', NXDOMAIN_CACHE', NODATA_CACHE',
+               rsvMinCacheCredClient, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative DNAME answer from name server that answers a resolver subquery (positively or negatively).
+  --- Insert the the data into cache and update the SLISTs of the blocked/sentQueries.
+  --- [RFC 6672, §3.4.1, step 4D] and [RFC 9156, §3, step (6b)]
+  --- Notes:
+  ---  * This rule applies in the case where the resolver receives a DNAME response and can then answer the rewritten
+  ---    query in the subsequent cache lookup. This may be possible either because of other data contained in the
+  ----   response, or because the cache already contains data that allows to answer the rewritten query.
+  ---  * A "DNAME answer" here means that DNAME substitution must be performed.
+  ---    In our model, this is the case if the first record in the Answer section is a DNAME record and its owner does
+  ---    not match the queried name, but note that the specification does not impose such an ordering of the records.
+  ---    Note also that in general, the Answer section may contain a chain of ("real" or synthesized) CNAME and DNAME
+  ---    records.
+  ---  * Updating the SLISTs can either lead to queries being "unblocked" or to queries needing to be aborted because
+  ---    no name server remains.
+  ---  * We ignore the fact that DNAME substitution can produce illegal target names (exceeding the maximum length).
+  ---  * QMIN: DNAME responses are treated the same no matter if the query was for a minimized QNAME.
+  ---  * Data ranking: Note that we consider only data with sufficient credibility score, see RFC 2181, §5.4.1.
+  crl [resolver-recv-dname-reply-for-resolver-answered] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL', ANS_CHAIN) TNRL else TNRL fi),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: cleanUpWorkBudget(IN',
+                                  filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT) ;; QSS_SEND ;; QSS'''),
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'''),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Rule only applies for DNAME responses (note that if the owner of the DNAME matches SNAME, it is not a DNAME
+     --- response!)
+     R RS := ANS /\
+     < NAME'', dname, TTL, NAME''' > := R /\
+     NAME'' =/= SNAME /\
+     RS' := if RS == nil then nil else tail(RS) fi /\
+     --- Convert relative to absolute TTL
+     R' := < NAME'', dname, TTL + T, NAME''' > /\
+     --- DNAME synthesis for the full SNAME because the query may have been for a minimized SNAME
+     < SNAME_FULL, cname, TTL', NAME' > := dnameSynthesis(SNAME_FULL, R') /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response (but note that we use the synthesized CNAME for SNAME_FULL)
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, R < SNAME_FULL, cname, TTL, NAME' > RS', T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME,
+                        if B then QTYPE else qminQTYPE fi, ANS, AUTH, RCODE, T) /\
+     --- Follow rewrites in cache, starting from the canonical name of the synthesized CNAME
+     --- Note that QTYPE cannot be CNAME for a resolver subquery, so we always follow the rewrite
+     SNAME_FULL' := initSNAME(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredResolver),
+                      ANS' R' < SNAME_FULL, cname, TTL', NAME' >) /\
+     ANS_CHAIN := initAnsChain(NAME', QTYPE, filterCacheCred(CACHE'', rsvMinCacheCredResolver),
+                    ANS' R' < SNAME_FULL, cname, TTL', NAME' >) /\
+     --- Cache hit for SNAME_FULL'
+     RESP := responseFromCache(ID, SNAME_FULL', QTYPE, ANS_CHAIN,
+               CACHE'', NXDOMAIN_CACHE', NODATA_CACHE',
+               rsvMinCacheCredResolver, QNAME
+             ) /\
+     rcode(RESP) =/= cacheMissRcode /\
+     --- Update the SLISTs of all pending queries
+     pairQSS(QSS'', QSS''') := updateSLISTsOfQSSs(QSS, QSS', RESP) /\
+     --- Split according to SLISTs, update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSS'') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries that have no name servers left, or client queries without known addresses for
+     --- which a follow-up query has been aborted due to exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort(QSS_EMPTY, QSS_EMPTY) ;;
+                   filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive authoritative DNAME answer from name server that does not answer a (client or resolver) query.
+  --- Rewrite the query, insert the the data into cache, and restart for the rewritten query.
+  --- [Alg. 5.3.3, step 4c + step 1 (cache lookup)]
+  --- Notes:
+  ---  * This rule applies for both client and resolver queries.
+  ---  * This rule applies in the case where the resolver receives a DNAME response but cannot answer the rewritten
+  ---    query in the subsequent cache lookup.
+  ---  * A "DNAME answer" here means that DNAME substitution must be performed.
+  ---    In our model, this is the case if the first record in the Answer section is a DNAME record and its owner does
+  ---    not match the queried name, but note that the specification does not impose such an ordering of the records.
+  ---    Note also that in general, the Answer section may contain a chain of ("real" or synthesized) CNAME and DNAME
+  ---    records.
+  ---  * A response may contain CNAMEs/DNAMEs in the Answer section and a delegation for the (last) canonical name in the
+  ---    Authority section, i.e., both cases 4b and 4c of the algorithm apply.
+  ---  * We ignore the fact that DNAME substitution can produce illegal target names (exceeding the maximum length).
+  ---  * QMIN: DNAME responses are treated the same no matter if the query was for a minimized QNAME.
+  ---  * Data ranking: Note that the credibility requirements may differ for client queries and resolver subqueries.
+  crl [resolver-recv-dname-reply-not-answered] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvRewriteLog: TNRL,
+                    rsvSlistLog: TSAL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     sbelt: SBELT,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS((QSS_SEND ;; QSS_FAILED), RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvRewriteLog: (if monitorRewriteLog? then tupleNameRecs(SNAME_FULL', ANS_CHAIN) TNRL else TNRL fi),
+                    rsvSlistLog: (if monitorSlistArgsLog? then tupleSlistArgs(SNAME_FULL', CACHE'', NXDOMAIN_CACHE',
+                                    NODATA_CACHE', SBELT, QNAME) TSAL else TSAL fi),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     sbelt: SBELT,
+                     workBudget: IN',
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', SLIST) := QSTATE /\
+     --- Rule only applies for DNAME responses (note that if the owner of the DNAME matches SNAME, it is not a DNAME
+     --- response!)
+     R RS := ANS /\
+     < NAME'', dname, TTL, NAME''' > := R /\
+     NAME'' =/= SNAME /\
+     RS' := if RS == nil then nil else tail(RS) fi /\
+     --- Convert relative to absolute TTL
+     R' := < NAME'', dname, TTL + T, NAME''' > /\
+     --- DNAME synthesis for the full SNAME because the query may have been for a minimized SNAME
+     < SNAME_FULL, cname, TTL', NAME' > := dnameSynthesis(SNAME_FULL, R') /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response (but note that we use the synthesized CNAME for SNAME_FULL)
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, R < SNAME_FULL, cname, TTL, NAME' > RS', T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME,
+                        if B then QTYPE else qminQTYPE fi, ANS, AUTH, RCODE, T) /\
+     --- Follow rewrites in cache, starting from the canonical name of the synthesized CNAME,
+     --- unless QTYPE matches CNAME (then we already have the answer)
+     SNAME_FULL' := if match(QTYPE, cname)
+                      then SNAME_FULL
+                      else initSNAME(NAME', QTYPE, filterCacheCred(CACHE'',
+                              if ADDR == RSV then rsvMinCacheCredResolver else rsvMinCacheCredClient fi),
+                              ANS' R' < SNAME_FULL, cname, TTL', NAME' >)
+                    fi /\
+     ANS_CHAIN := if match(QTYPE, cname)
+                    then ANS' R'
+                    else initAnsChain(NAME', QTYPE, filterCacheCred(CACHE'',
+                            if ADDR == RSV then rsvMinCacheCredResolver else rsvMinCacheCredClient fi),
+                            ANS' R' < SNAME_FULL, cname, TTL', NAME' >)
+                  fi /\
+     --- Cache miss for SNAME_FULL'
+     RESP := responseFromCache(ID, SNAME_FULL', QTYPE, ANS_CHAIN,
+               CACHE'', NXDOMAIN_CACHE', NODATA_CACHE',
+               if ADDR == RSV then rsvMinCacheCredResolver else rsvMinCacheCredClient fi,
+               QNAME
+             ) /\
+     rcode(RESP) == cacheMissRcode /\
+     --- Init SLIST
+     < NAME NA > := initSLIST(SNAME_FULL', CACHE'', NXDOMAIN_CACHE', NODATA_CACHE', SBELT, QNAME) /\
+     --- Init QMIN state
+     QMIN_SNAME := initQMinSNAME(NAME, qminState(SNAME_FULL', maxMinimiseCount, minimiseOneLab, false),
+                    NODATA_CACHE', NAME) /\
+     QMIN_STATE := initQMinState(NAME, qminState(SNAME_FULL', maxMinimiseCount, minimiseOneLab, false),
+                    NODATA_CACHE', NAME) /\
+     --- Create rewritten query and resolver subqueries
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, QMIN_SNAME, ID' .. cn, QMIN_STATE, ANS_CHAIN, < NAME NA >) /\
+     QSS'' := addResolverSubqueries(QSTATE', RSV, CACHE'', NXDOMAIN_CACHE', NODATA_CACHE', SBELT) ;; QSS /\
+     --- Update work budget
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS'') /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries without known addresses for which a follow-up query has been aborted due to
+     --- exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive referral reply (without CNAMEs/DNAMEs).
+  --- Insert delegation into cache, re-initialize SLIST, and re-start resolution process.
+  --- [Alg. 5.3.3, step 4b]
+  --- Notes:
+  ---  * This rule applies for both client and resolver queries.
+  ---  * This rule handles referrals for QNAME. Note that in general, a response may contain CNAMEs in the Answer
+  ---    section and a delegation for the (last) canonical name in the Authority section, i.e., both cases 4b and 4c
+  ---    of the algorithm apply. This case is handled in the rules for CNAME responses.
+  ---  * The same remark applies for DNAME responses with a referral for the (last) canonical name.
+  ---  * Upon receiving a referral, the resolver only re-initializes the SLIST of the query for which it received the
+  ---    referral. It does not check whether the newly learned name servers might also be useful for other queries.
+  crl [resolver-recv-referral-reply] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    rsvSlistLog: TSAL,
+                    clientQEndTime: IF',
+                    STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     sbelt: SBELT,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, nil, AUTH, ADD, 0) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS((QSS_SEND ;; QSS_FAILED), RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    rsvSlistLog: (if monitorSlistArgsLog? then tupleSlistArgs(SNAME_FULL, CACHE', NXDOMAIN_CACHE_UNEXPIRED,
+                                    NODATA_CACHE_UNEXPIRED, SBELT, QNAME) TSAL else TSAL fi),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE_UNEXPIRED, T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE_UNEXPIRED, T)
+                                      else NODATA_CACHE fi),
+                     sbelt: SBELT,
+                     workBudget: IN',
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     --- Authority section contains NS records (note that Answer section must be empty by pattern matching above)
+     filterRType(ns, AUTH) =/= nil /\
+     --- Unfold QSTATE and check that delegation is better
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', < NAME NA >) := QSTATE /\
+     delegationIsBetter(SNAME_FULL, AUTH, NAME) /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheCred(CACHE_UNEXPIRED, AUTH ADD, 1, T) /\
+     --- Re-initialize SLIST
+     < NAME' NA' > := initSLIST(SNAME_FULL, CACHE', NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED, SBELT, QNAME) /\
+     --- Init QMIN state
+     QMIN_SNAME := initQMinSNAME(NAME', qminState(SNAME_FULL, N, N', B), NODATA_CACHE_UNEXPIRED, NAME') /\
+     QMIN_STATE := initQMinState(NAME', qminState(SNAME_FULL, N, N', B), NODATA_CACHE_UNEXPIRED, NAME') /\
+     --- Create updated query and resolver subqueries
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, QMIN_SNAME, ID' .. ref, QMIN_STATE, ANS', < NAME' NA' >) /\
+     QSS'' := addResolverSubqueries(QSTATE', RSV, CACHE', NXDOMAIN_CACHE_UNEXPIRED, NODATA_CACHE_UNEXPIRED, SBELT) ;; QSS /\
+     --- Update work budget
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS'') /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries without known addresses for which a follow-up query has been aborted due to
+     --- exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > QNAME minimization: Receive authoritative NOERROR non-DNAME reply for a query with a minimized QNAME, or an
+  --- NXDOMAIN CNAME answer (in which case there was no error for the QNAME).
+  --- Insert the records from all sections into cache and resend the query, according to the QMIN algorithm.
+  --- [RFC 9156, §3, step (6c)]
+  --- Notes:
+  ---  * This rule applies for both client and resolver queries.
+  ---  * This rule does NOT apply for DNAME responses. These are always treated as if they were received for the
+  ---    full QNAME, see RFC 9156, §3, step (6b).
+  ---  * QMIN: This rule applies in the case where the resolver sent a minimized QNAME, i.e., either it queried only
+  ---    a prefix of the full QNAME or it has queried the full QNAME, but for a different QTYPE. Thus, the query needs
+  ---    to be resent with more labels or for the original QTYPE.
+  ---  * QMIN: This rule also applies when the response contains a CNAME for a prefix QNAME (and possibly a
+  ---    referral or NXDOMAIN RCODE). Note that the CNAME should not be followed in this case.
+  ---    However, when the original QNAME was used, the CNAME can be followed independently of the QTYPE.
+  ---  * Accepts responses from any name server.
+  crl [resolver-recv-qmin-noerror-reply] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | cache: CACHE,
+                     nxdomainCache: NXDOMAIN_CACHE,
+                     nodataCache: NODATA_CACHE,
+                     workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, ANS, AUTH, ADD, RCODE) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS((QSS_SEND ;; QSS_FAILED), RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | cache: (if rsvCaching? then filterCacheTTLGreaterThan(CACHE'', T) else CACHE fi),
+                     nxdomainCache: (if rsvCaching? then filterNxdomainCacheTTLGreaterThan(NXDOMAIN_CACHE', T)
+                                      else NXDOMAIN_CACHE fi),
+                     nodataCache: (if rsvCaching? then filterNodataCacheTTLGreaterThan(NODATA_CACHE', T)
+                                      else NODATA_CACHE fi),
+                     workBudget: IN',
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     --- Not a DNAME response
+     rtype(head(ANS)) =/= dname or ownerName(head(ANS)) == SNAME /\
+     --- Only applies if there was no error for QNAME (but note that this is also the case for CNAME chains with NXDOMAIN).
+     RCODE == 0 or (RCODE == 3 and rtype(head(ANS)) == cname) /\
+     --- Does not apply for referral responses
+     ANS =/= nil or filterRType(ns, AUTH) == nil /\
+     --- Only applies for minimized QNAMEs or wrong QTYPE (but note that wrong QTYPE doesn't matter for CNAME responses)
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', false), ANS', < NAME NA >) := QSTATE /\
+     SNAME =/= SNAME_FULL or (qminQTYPE =/= QTYPE and rtype(head(ANS)) =/= cname) /\
+     --- Prune expired records from cache
+     CACHE_UNEXPIRED := filterCacheTTLGreaterEqual(CACHE, T) /\
+     NXDOMAIN_CACHE_UNEXPIRED := filterNxdomainCacheTTLGreaterEqual(NXDOMAIN_CACHE, T) /\
+     NODATA_CACHE_UNEXPIRED := filterNodataCacheTTLGreaterEqual(NODATA_CACHE, T) /\
+     --- Cache the data from the response
+     CACHE' := updateCacheAuthAns(CACHE_UNEXPIRED, ANS, T) /\
+     CACHE'' := updateCacheCred(CACHE', AUTH ADD, 1, T) /\
+     NXDOMAIN_CACHE' := updateNxdomainCache(NXDOMAIN_CACHE_UNEXPIRED, SNAME, ANS, AUTH, RCODE, T) /\
+     NODATA_CACHE' := updateNodataCache(NODATA_CACHE_UNEXPIRED, SNAME, qminQTYPE, ANS, AUTH, RCODE, T) /\
+     --- Init QMIN state
+     QMIN_SNAME := initQMinSNAME(SNAME, qminState(SNAME_FULL, N, N', false), NODATA_CACHE', NAME) /\
+     QMIN_STATE := initQMinState(SNAME, qminState(SNAME_FULL, N, N', false), NODATA_CACHE', NAME) /\
+     --- Update work budget
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, QMIN_SNAME, ID' .. qm, QMIN_STATE, ANS', < NAME NA >) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSTATE', IN) /\
+     --- Failed queries: Client queries without known addresses for which a follow-up query has been aborted due to
+     --- exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort((QSS ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive bad referral reply (without CNAMEs) for a client query, where "bad" means that the new authority
+  --- information is actually worse than what was known before.
+  --- Remove the name server that sent the REFUSED reply from the SLIST of the query. Send the query to another name
+  --- server from the SLIST, or send a SERVFAIL response to the client if there are no other name servers left.
+  --- Notes:
+  ---  * This rule handles referrals for QNAME. Note that in general, a response may contain CNAMEs in the Answer
+  ---    section and a delegation for the (last) canonical name in the Authority section, i.e., both cases 4b and 4c
+  ---    of the algorithm apply. This case is handled in the rule for CNAME responses.
+  crl [resolver-recv-bad-referral-reply-for-client] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, nil, AUTH, ADD, 0) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: cleanUpWorkBudget(IN', QSS_UNKNOWN_ADDR ;; QSS ;; QSS_SEND ;; QSS'),
+                     blockedQueries: (QSS_UNKNOWN_ADDR ;; QSS),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     --- Authority section contains NS records (note that Answer section must be empty by pattern matching above)
+     filterRType(ns, AUTH) =/= nil /\
+     --- Unfold QSTATE and check that delegation is not better
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', < NAME NA >) := QSTATE /\
+     not(delegationIsBetter(SNAME_FULL, AUTH, NAME)) /\
+     --- Only applies for client queries
+     ADDR =/= RSV /\
+     --- Remove name server from SLIST
+     NA' := removeNamesFromSLISTMap(NA, namesForAddressSLIST(NA, NS)) /\
+     --- Remove other name servers from SLIST for which the address is unknown and no subqueries exist anymore
+     NA'' := removeNamesWithoutSubqueriesFromSLISTMap(NA', QSS ;; QSS', ID) /\
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID' .. nxt, qminState(SNAME_FULL, N, N', B), ANS', < NAME NA'' >) /\
+     --- Update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSTATE') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: The client query, if there are no name servers left or if its work budget is exceeded
+     QSS_FAILED := QSS_ABORT ;; QSS_EMPTY .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- Receive bad referral reply for a resolver query. Remove the name server that sent the bad referral from the SLIST
+  --- of the query.
+  --- Send the query to another name server from the SLIST. If there is no other name server left, remove all SLIST
+  --- entries for the unresolvable name server and send failure responses to clients if no name servers remain.
+  --- Notes:
+  ---  * This rule handles referrals for QNAME. Note that in general, a response may contain CNAMEs in the Answer
+  ---    section and a delegation for the (last) canonical name in the Authority section, i.e., both cases 4b and 4c
+  ---    of the algorithm apply. This case is handled in the rule for CNAME responses.
+  ---  * The case that no name servers remain should only occur for blockedQueries, as sentQueries necessarily have at
+  ---    least one known address in the SLIST.
+  crl [resolver-recv-bad-referral-reply-for-resolver] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, nil, AUTH, ADD, 0) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: cleanUpWorkBudget(IN',
+                      filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT) ;; QSS_SEND ;; QSS'''),
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'''),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     --- Authority section contains NS records (note that Answer section must be empty by pattern matching above)
+     filterRType(ns, AUTH) =/= nil /\
+     --- Unfold QSTATE and check that delegation is not better
+     queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', < NAME NA >) := QSTATE /\
+     not(delegationIsBetter(SNAME_FULL, AUTH, NAME)) /\
+     --- Remove name server from SLIST
+     NA' := removeNamesFromSLISTMap(NA, namesForAddressSLIST(NA, NS)) /\
+     --- Remove other name servers from SLIST for which the address is unknown and no subqueries exist anymore
+     NA'' := removeNamesWithoutSubqueriesFromSLISTMap(NA', QSS ;; QSS', ID) /\
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID' .. nxt, qminState(SNAME_FULL, N, N', B), ANS', < NAME NA'' >) /\
+     --- If no name servers remain, remove the unresolvable name server from all SLISTs
+     QSS'' := if NA'' == empty
+                then removeNameFromSLISTsOfQSSIfNullAddr(QSS, QNAME)
+                else QSS
+              fi /\
+     QSS''' := if NA'' == empty
+                then removeNameFromSLISTsOfQSSIfNullAddr(QSS', QNAME)
+                else QSS'
+              fi /\
+     --- Update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSTATE' ;; QSS'') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries that have no name servers left, or client queries without known addresses for
+     --- which a follow-up query has been aborted due to exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort(QSS_EMPTY, QSS_EMPTY) ;;
+                   filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive REFUSED reply for a client query. Remove the name server that sent the REFUSED reply from the SLIST
+  --- of the query.
+  --- Send the query to another name server from the SLIST, or send a SERVFAIL response to the client if there are no
+  --- other name servers left.
+  crl [resolver-recv-refused-reply-for-client] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, nil, nil, nil, 5) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: cleanUpWorkBudget(IN', QSS_UNKNOWN_ADDR ;; QSS ;; QSS_SEND ;; QSS'),
+                     blockedQueries: (QSS_UNKNOWN_ADDR ;; QSS),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', < NAME NA >) := QSTATE /\
+     --- Only applies for client queries
+     ADDR =/= RSV /\
+     --- Remove name server from SLIST
+     NA' := removeNamesFromSLISTMap(NA, namesForAddressSLIST(NA, NS)) /\
+     --- Remove other name servers from SLIST for which the address is unknown and no subqueries exist anymore
+     NA'' := removeNamesWithoutSubqueriesFromSLISTMap(NA', QSS ;; QSS', ID) /\
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID' .. nxt, qminState(SNAME_FULL, N, N', B), ANS', < NAME NA'' >) /\
+     --- Update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSTATE') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: The client query, if there are no name servers left or if its work budget is exceeded
+     QSS_FAILED := QSS_ABORT ;; QSS_EMPTY .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- Receive REFUSED reply for a resolver query. Remove the name server that sent the REFUSED reply from the SLIST
+  --- of the query.
+  --- Send the query to another name server from the SLIST. If there is no other name server left, remove all SLIST
+  --- entries for the unresolvable name server and send failure responses to clients if no name servers remain.
+  --- Notes:
+  ---  * The case that no name servers remain should only occur for blockedQueries, as sentQueries necessarily have at
+  ---    least one known address in the SLIST.
+  crl [resolver-recv-refused-reply-for-resolver] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, response(ID', SNAME, nil, nil, nil, 5) from NS to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID', RSV, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalRcv: incrAF(RSV, AF),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: cleanUpWorkBudget(IN',
+                      filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT) ;; QSS_SEND ;; QSS'''),
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'''),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID', qminState(SNAME_FULL, N, N', B), ANS', < NAME NA >) := QSTATE /\
+     --- Remove name server from SLIST
+     NA' := removeNamesFromSLISTMap(NA, namesForAddressSLIST(NA, NS)) /\
+     --- Remove other name servers from SLIST for which the address is unknown and no subqueries exist anymore
+     NA'' := removeNamesWithoutSubqueriesFromSLISTMap(NA', QSS ;; QSS', ID) /\
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID' .. nxt, qminState(SNAME_FULL, N, N', B), ANS', < NAME NA'' >) /\
+     --- If no name servers remain, remove the unresolvable name server from all SLISTs
+     QSS'' := if NA'' == empty
+                then removeNameFromSLISTsOfQSSIfNullAddr(QSS, QNAME)
+                else QSS
+              fi /\
+     QSS''' := if NA'' == empty
+                then removeNameFromSLISTsOfQSSIfNullAddr(QSS', QNAME)
+                else QSS'
+              fi /\
+     --- Update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSTATE' ;; QSS'') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries that have no name servers left, or client queries without known addresses for
+     --- which a follow-up query has been aborted due to exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort(QSS_EMPTY, QSS_EMPTY) ;;
+                   filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive a timeout trigger for a client query. Remove the name server that does not respond from the SLIST of
+  --- the query.
+  --- Send the query to another name server from the SLIST, or send a SERVFAIL response to the client if there are no
+  --- other name servers left.
+  --- Notes:
+  ---  * Currently, there are no retransmissions to the same name server. If a query to a name server times out, the
+  ---    resolver considers that name server unreachable.
+  crl [resolver-timeout-for-client] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     workBudget: IN,
+                     STATE >
+  {T, timeout(ID', ADDR') from RSV to RSV}
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: cleanUpWorkBudget(IN', QSS_UNKNOWN_ADDR ;; QSS ;; QSS_SEND ;; QSS'),
+                     blockedQueries: (QSS_UNKNOWN_ADDR ;; QSS),
+                     sentQueries: (QSS_SEND ;; QSS'),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID', QMIN_STATE, ANS, < NAME NA >) := QSTATE /\
+     --- Only applies for client queries
+     ADDR =/= RSV /\
+     --- Remove name server from SLIST
+     NA' := removeNamesFromSLISTMap(NA, namesForAddressSLIST(NA, ADDR')) /\
+     --- Remove other name servers from SLIST for which the address is unknown and no subqueries exist anymore
+     NA'' := removeNamesWithoutSubqueriesFromSLISTMap(NA', QSS ;; QSS', ID) /\
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), ADDR, SNAME, ID' .. nxt, QMIN_STATE, ANS, < NAME NA'' >) /\
+     --- Update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSTATE') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: The client query, if there are no name servers left or if its work budget is exceeded
+     QSS_FAILED := QSS_ABORT ;; QSS_EMPTY .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive timeout trigger for a resolver query. Remove the name server that does not respond from the SLIST of
+  --- the query.
+  --- Send the query to another name server from the SLIST. If there is no other name server left, remove all SLIST
+  --- entries for the unresolvable name server and send failure responses to clients if no name servers remain.
+  --- Notes:
+  ---  * Currently, there are no retransmissions to the same name server. If a query to a name server times out, the
+  ---    resolver considers that name server unreachable.
+  ---  * The case that no name servers remain should only occur for blockedQueries, as sentQueries necessarily have at
+  ---    least one known address in the SLIST.
+  crl [resolver-timeout-for-resolver] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: (QSTATE ;; QSS'),
+                     STATE >
+  {T, timeout(ID', ADDR') from RSV to RSV}
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incrForQSS(QSS_SEND ;; QSS_FAILED, RSV, IAF') else IAF' fi),
+                    totalSent: addAF(sizeQSSFloat(QSS_SEND ;; QSS_FAILED), RSV, AF'),
+                    clientQEndTime: (idFloatMapForQSS(QSS_FAILED, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: cleanUpWorkBudget(IN',
+                      filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT) ;; QSS_SEND ;; QSS'''),
+                     blockedQueries: filterQSSNotFollowUpOfOriginalAborted(QSS_UNKNOWN_ADDR, QSS_ABORT),
+                     sentQueries: (QSS_SEND ;; QSS'''),
+                     STATE >
+  sendQueries(QSS_SEND, RSV)
+  sendFailureResponses(QSS_FAILED, RSV)
+  if
+     queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID', QMIN_STATE, ANS, < NAME NA >) := QSTATE  /\
+     --- Remove name server from SLIST
+     NA' := removeNamesFromSLISTMap(NA, namesForAddressSLIST(NA, ADDR')) /\
+     --- Remove other name servers from SLIST for which the address is unknown and no subqueries exist anymore
+     NA'' := removeNamesWithoutSubqueriesFromSLISTMap(NA', QSS ;; QSS', ID) /\
+     QSTATE' := queryState(query(ID, QNAME, QTYPE), RSV, SNAME, ID' .. nxt, QMIN_STATE, ANS, < NAME NA'' >) /\
+     --- If no name servers remain, remove the unresolvable name server from all SLISTs
+     QSS'' := if NA'' == empty
+                then removeNameFromSLISTsOfQSSIfNullAddr(QSS, QNAME)
+                else QSS
+              fi /\
+     QSS''' := if NA'' == empty
+                then removeNameFromSLISTsOfQSSIfNullAddr(QSS', QNAME)
+                else QSS'
+              fi /\
+     --- Update work budget
+     pairQSS(QSS_EMPTY, QSS_NONEMPTY) := splitQSSEmpty(QSTATE' ;; QSS'') /\
+     pairQSS(QSS_KNOWN_ADDR, QSS_UNKNOWN_ADDR) := splitQSSKnownAddr(QSS_NONEMPTY) /\
+     tupleQSSQSSIdNatMap(QSS_SEND, QSS_ABORT, IN') := splitQSSWorkBudget(QSS_KNOWN_ADDR, IN) /\
+     --- Failed queries: Client queries that have no name servers left, or client queries without known addresses for
+     --- which a follow-up query has been aborted due to exceeded work budget
+     QSS_FAILED := filterQSSClientQueriesToAbort(QSS_EMPTY, QSS_EMPTY) ;;
+                   filterQSSClientQueriesToAbort((QSS_UNKNOWN_ADDR ;; QSS_ABORT), QSS_ABORT) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive an overall timeout trigger for the resolution of a client query that has not yet been answered.
+  --- Discard all follow-up queries and send a SERVFAIL response to the client.
+  crl [resolver-overall-timeout] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', clientQEndTime: IF', STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: QSS',
+                     STATE >
+  {T, overallTimeout(query(ID, QNAME, QTYPE), ADDR) from RSV to RSV}
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF') else IAF' fi),
+                    totalSent: incrAF(RSV, AF'),
+                    clientQEndTime: (idFloatEntry(ID, T), IF'),
+                    STATE' >
+  < RSV : Resolver | workBudget: removeFromIdNatMap(ID, IN),
+                     blockedQueries: filterQSSNotFollowUpOfId(QSS, ID),
+                     sentQueries: filterQSSNotFollowUpOfId(QSS', ID),
+                     STATE >
+  [delay, response(ID, QNAME, nil, nil, nil, 2) from RSV to ADDR, drop?]
+  if idInQSSOriginal(ID, QSS ;; QSS') .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive an overall timeout trigger for the resolution of a client query that has already been answered.
+  --- Discard all follow-up queries, but do not send a SERVFAIL response to the client.
+  crl [resolver-overall-timeout-ignore] :
+  < MON : Monitor | STATE' >
+  < RSV : Resolver | workBudget: IN,
+                     blockedQueries: QSS,
+                     sentQueries: QSS',
+                     STATE >
+  {T, overallTimeout(query(ID, QNAME, QTYPE), ADDR) from RSV to RSV}
+=>
+  < MON : Monitor | STATE' >
+  < RSV : Resolver | workBudget: removeFromIdNatMap(ID, IN),
+                     blockedQueries: filterQSSNotFollowUpOfId(QSS, ID),
+                     sentQueries: filterQSSNotFollowUpOfId(QSS', ID),
+                     STATE >
+  if not(idInQSSOriginal(ID, QSS ;; QSS')) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive timeout trigger for a query that is no longer in sentQueries.
+  --- Thus, ignore the timeout.
+  crl [resolver-timeout-ignore] :
+  < RSV : Resolver | sentQueries: QSS',
+                     STATE >
+  {T, timeout(ID, ADDR) from RSV to RSV}
+=>
+  < RSV : Resolver | sentQueries: QSS',
+                     STATE >
+  if not(idInQSS(ID, QSS')) .
+
+  ------------------
+  --- [RESOLVER] ---
+  ------------------
+  --- > Receive response for a timed out query, i.e., a query that is no longer in sentQueries.
+  --- The response is ignored because the corresponding state has already been deleted when the timeout occurred.
+  crl [resolver-recv-response-ignore] :
+  < MON : Monitor | msgsRcv: IAF, totalRcv: AF, STATE' >
+  < RSV : Resolver | sentQueries: QSS',
+                     STATE >
+  {T, response(ID, NAME, ANS, AUTH, ADD, RCODE) from ADDR to RSV}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, RSV, IAF) else IAF fi),
+                    totalRcv: incrAF(RSV, AF),
+                    STATE' >
+  < RSV : Resolver | sentQueries: QSS',
+                     STATE >
+  if not(idInQSS(ID, QSS')) .
+
+  ----------------
+  --- [CLIENT] ---
+  ----------------
+  --- > Receive response from resolver and send out next query.
+  --- Note: The client "accepts" any response coming from its resolver, even if it did not make a request.
+  rl [client-recv-resp-send-next] :
+  < MON : Monitor | msgsRcv: IAF,
+                    msgsSent: IAF',
+                    totalRcv: AF,
+                    totalSent: AF',
+                    clientQSent: N,
+                    clientQAnswered: N',
+                    clientQServfail: N'',
+                    clQueryLog: TAQL,
+                    clRespLog: TARL,
+                    STATE' >
+  < CL : Client | queries: (query(ID', QNAME, QTYPE) QS), resolver: RSV, STATE >
+  {T, response(ID, NAME, ANS, AUTH, ADD, RCODE) from RSV to CL}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, CL, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID', CL, IAF') else IAF' fi),
+                    totalRcv: incrAF(CL, AF),
+                    totalSent: incrAF(CL, AF'),
+                    clientQSent: s N,
+                    clientQAnswered: s N',
+                    clientQServfail: (if RCODE == 2 then s N'' else N'' fi),
+                    clQueryLog: (if monitorQueryLog? then tupleAddrQuery(CL, query(ID', QNAME, QTYPE)) TAQL else TAQL fi),
+                    clRespLog: (if monitorQueryLog? then tupleAddrResp(CL, response(ID, NAME, ANS, AUTH, ADD, RCODE)) TARL
+                                  else TARL fi),
+                    STATE' >
+  < CL : Client | queries: QS, resolver: RSV, STATE >
+  [delay, query(ID', QNAME, QTYPE) from CL to RSV, drop?] .
+
+  ----------------
+  --- [CLIENT] ---
+  ----------------
+  --- > Receive response from resolver (no queries left).
+  --- Note: The client "accepts" any response coming from its resolver, even if it did not make a request.
+  rl [client-recv-resp-done] :
+  < MON : Monitor | msgsRcv: IAF, totalRcv: AF, clientQAnswered: N', clientQServfail: N'', clRespLog: TARL, STATE' >
+  < CL : Client | queries: nil, resolver: RSV, notifyDone: ADDR, STATE >
+  {T, response(ID, QNAME, ANS, AUTH, ADD, RCODE) from RSV to CL}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, CL, IAF) else IAF fi),
+                    totalRcv: incrAF(CL, AF),
+                    clientQAnswered: s N',
+                    clientQServfail: (if RCODE == 2 then s N'' else N'' fi),
+                    clRespLog: (if monitorQueryLog? then tupleAddrResp(CL, response(ID, QNAME, ANS, AUTH, ADD, RCODE)) TARL
+                                  else TARL fi),
+                    STATE' >
+  < CL : Client | queries: nil, resolver: RSV, notifyDone: ADDR, STATE >
+  if ADDR =/= nullAddr then
+    [0.0, stopSignal from CL to ADDR, 0]
+  else
+    null
+  fi .
+
+endm
+
+mod ATTACKER-COMMON is
+  inc SORTS + MSG .
+
+  --- Variables
+  var ADDR : Address .
+  vars NAME NAME' : Name .
+  var QTYPE : RType .
+  vars N N' N'' : Nat .
+  var TTL : Float .
+  vars R R' : Record .
+  var RS : List{Record} .
+
+  --- Helper functions
+
+  --- Creates a fake name consisting of a given prefix and a given number of fake labels.
+  ---   The number of fake labels can be zero, in which case the name prefix is returned as-is.
+  --- Args: chain identifier, number of fake labels to add, name prefix
+  op fakeName : Nat Nat Name -> Name .
+  eq fakeName(N, s N', NAME)
+    = label2(N, N') . fakeName(N, N', NAME) .
+  eq fakeName(N, 0, NAME) = NAME .
+
+  --- Creates a list of fake delegation records
+  --- Args: num delegations to create, current counter, number of fake labels, owner name, value name prefix, TTL
+  op fakeDelegationRecords : Nat Nat Nat Name Name Float -> List{Record} .
+  eq fakeDelegationRecords(s N, N', N'', NAME, NAME', TTL)
+    = < NAME, ns, TTL, fakeName(N', N'', NAME') > fakeDelegationRecords(N, s N', N'', NAME, NAME', TTL) .
+  eq fakeDelegationRecords(0, N', N'', NAME, NAME', TTL) = nil .
+
+  --- Creates a list of queries, all for different subdomains of a given domain.
+  --- Args: number of queries to create, QNAME prefix, number of fake labels to add, query type, client address
+  op genQueries : Nat Name Nat RType Address -> List{Query} .
+  eq genQueries(s N, NAME, N', QTYPE, ADDR)
+    = query(clientId(ADDR, s N), fakeName(s N, N', NAME), QTYPE) genQueries(N, NAME, N', QTYPE, ADDR) .
+  eq genQueries(0, NAME, N', QTYPE, ADDR) = nil .
+
+  --- Returns every second record from the list, starting from the first element.
+  op splitList1 : List{Record} -> List{Record} .
+  eq splitList1(R R' RS) = R splitList1(RS) .
+  eq splitList1(R) = R .
+  eq splitList1(nil) = nil .
+
+  --- Returns every second record from the list, starting from the second element.
+  op splitList2 : List{Record} -> List{Record} .
+  eq splitList2(R RS) = splitList1(RS) .
+  eq splitList2(nil) = nil .
+
+  --- Get a simple CNAME chain for a DNS Unchained attack. This function returns the entire chain, which then needs to
+  ---   be split across two different name servers.
+  ---   Note: Using different chain identifiers, multiple chains can be placed on the same name server.
+  ---   Implementation note: We reuse the unchainedQminRecords function with zero extra labels.
+  --- Args: target name, intermediary name, chain length, chain identifier, TTL
+  op unchainedRecords : Name Name Nat Nat Float -> List{Record} .
+  eq unchainedRecords(NAME, NAME', N, N', TTL) = unchainedQminRecords(NAME, NAME', N, N', 0, TTL) .
+
+  --- Get one half of a simple CNAME chain for a DNS Unchained attack, namely the half that is to be placed on the
+  ---   target ANS.
+  ---   Note: Using different chain identifiers, multiple chains can be placed on the same name server.
+  --- Args: target name, intermediary name, chain length, chain identifier, TTL
+  op unchainedRecordsTarget : Name Name Nat Nat Float -> List{Record} .
+  eq unchainedRecordsTarget(NAME, NAME', N, N', TTL)
+    = splitList1(unchainedRecords(NAME, NAME', N, N', TTL)) .
+
+  --- Get the other half of a simple CNAME chain for a DNS Unchained attack, namely the half that is to be placed on
+  ---   the intermediary ANS.
+  ---   Note: Using different chain identifiers, multiple chains can be placed on the same name server.
+  --- Args: target name, intermediary name, chain length, chain identifier, TTL
+  op unchainedRecordsIntermediary : Name Name Nat Nat Float -> List{Record} .
+  eq unchainedRecordsIntermediary(NAME, NAME', N, N', TTL)
+    = splitList2(unchainedRecords(NAME, NAME', N, N', TTL)) .
+
+  --- Get a client query for the first element of the chain, i.e., a query that triggers the Unchained attack.
+  ---   Implementation note: We reuse the unchainedQminQuery function with zero extra labels.
+  --- Args: target name, chain length, chain identifier
+  op unchainedQuery : Name Nat Nat -> Query .
+  eq unchainedQuery(NAME, N, N') = unchainedQminQuery(NAME, N, N', 0) .
+
+  --- Get a CNAME chain for an Unchained+QMIN attack, i.e., an Unchained attack augmented with QNAME minimization.
+  ---   The records to be placed on the target ANS have many labels, whereas the records for the intermediary ANS do
+  ---   not.
+  --- Args: target name, intermediary name, chain length, chain identifier, number of extra labels, TTL
+  op unchainedQminRecords : Name Name Nat Nat Nat Float -> List{Record} .
+  eq unchainedQminRecords(NAME, NAME', s N, N', N'', TTL)
+    = < fakeName(N', N'', label2(N', s N) . NAME), cname, TTL, label2(N', N) . NAME' >
+      $unchainedQminRecords(NAME', NAME, N, N', N'', TTL) .
+  eq unchainedQminRecords(NAME, NAME', 0, N', N'', TTL)
+    = < fakeName(N', N'', label2(N', 0) . NAME), txt, TTL, nullAddr > . --- dummy value
+
+  op $unchainedQminRecords : Name Name Nat Nat Nat Float -> List{Record} .
+  eq $unchainedQminRecords(NAME, NAME', s N, N', N'', TTL)
+    = < label2(N', s N) . NAME, cname, TTL, fakeName(N', N'', label2(N', N) . NAME') >
+      unchainedQminRecords(NAME', NAME, N, N', N'', TTL) .
+  eq $unchainedQminRecords(NAME, NAME', 0, N', N'', TTL)
+    = < label2(N', 0) . NAME, txt, TTL, nullAddr > . --- dummy value
+
+  --- Get one half of an Unchained+QMIN chain, namely the half that is to be placed on the target ANS.
+  ---   Note: Using different chain identifiers, multiple chains can be placed on the same name server.
+  --- Args: target name, intermediary name, chain length, chain identifier, number of extra labels, TTL
+  op unchainedQminRecordsTarget : Name Name Nat Nat Nat Float -> List{Record} .
+  eq unchainedQminRecordsTarget(NAME, NAME', N, N', N'', TTL)
+    = splitList1(unchainedQminRecords(NAME, NAME', N, N', N'', TTL)) .
+
+  --- Get the other half of an Unchained+QMIN chain, namely the half that is to be placed on the intermediary ANS.
+  ---   Note: Using different chain identifiers, multiple chains can be placed on the same name server.
+  --- Args: target name, intermediary name, chain length, chain identifier, number of extra labels, TTL
+  op unchainedQminRecordsIntermediary : Name Name Nat Nat Nat Float -> List{Record} .
+  eq unchainedQminRecordsIntermediary(NAME, NAME', N, N', N'', TTL)
+    = splitList2(unchainedQminRecords(NAME, NAME', N, N', N'', TTL)) .
+
+  --- Get a client query for the first element of the chain, i.e., a query that triggers the Unchained+QMIN attack.
+  --- Args: target name, chain length, chain identifier, number of extra labels
+  op unchainedQminQuery : Name Nat Nat Nat -> Query .
+  eq unchainedQminQuery(NAME, N, N', N'') = query(N', fakeName(N', N'', label2(N', N) . NAME), txt) .
+
+  --- Get a client query for the first element of an iDNS delegation chain.
+  ---   Note: Using different chain identifiers, multiple delegation chains can be triggered.
+  --- Args: domain prefix, number of extra labels, chain identifier
+  op idnsQuery : Name Nat Nat -> Query .
+  eq idnsQuery(NAME, N, N') = query(N', fakeName(N', N, label2(N', 0) . NAME), a) .
+
+endm
+
+mod ATTACKER is
+  inc DNS + ATTACKER-COMMON .
+
+  --- Variables
+  vars CL RSV NS ADDR MON : Address .
+  var ID : Id .
+  vars NAME NAME' NAME'' QNAME : Name .
+  var QTYPE : RType .
+  vars ANS AUTH ADD DB : List{Record} .
+  vars QS QS' QS'' QS''' : List{Query} .
+  vars IAF IAF' : IdAddrFloatMap .
+  vars AF AF' : AddrFloatMap .
+  var TAQL : TupleAddrQueryList .
+  var TARL : TupleAddrRespList .
+  vars STATE STATE' : AttributeSet .
+  vars N N' N'' N''' RCODE : Nat .
+  var STATUS : Status .
+  var T : Float . --- timestamp
+  vars F TTL : Float .
+  var ACTOR : ActorType .
+  var RESP : Response .
+
+  --- Attributes, some shared among different actors
+  op counter:_ : Nat -> Attribute .
+  op namePrefix:_ : Name -> Attribute .
+  op numFakeLabels:_ : Nat -> Attribute .
+  op numFakeDel:_ : Nat -> Attribute .
+  op status:_ : Status -> Attribute .
+  op atkrRate:_ : Float -> Attribute .
+  op ttl:_ : Float -> Attribute .
+  op allQueries:_ : List{Query} -> Attribute .
+  op nsDelay:_ : Float -> Attribute .
+
+  sort Status .
+  ops running stopped : -> Status .
+
+  --- Trigger messages
+  op atkrSendNext : -> Content . --- trigger for attacker client to send next query
+
+  -------------------------
+  --- [NXDOMAIN CLIENT] ---
+  -------------------------
+  --- A malicious client that sends queries for different non-existent subdomains of a given domain.
+  --- The client keeps sending queries until it receives a special stop message.
+  --- The malicious client is parametric in:
+  ---  * Target domain (i.e., the domain for which non-existent subdomains are queried)
+  ---  * Number of non-existent labels that are added to create a non-existent subdomain (cf. QNAME minimization)
+  ---  * Rate at which queries are being sent
+  op NxdomainClient : -> ActorType .
+
+  --- A convenience function to easily obtain an NxdomainClient. The returned Config contains both the malicious client
+  ---   and the trigger message to start.
+  --- Args:
+  ---  * Address for malicious client
+  ---  * Domain prefix: queries are created for non-existent subdomains of this domain
+  ---  * Number of non-existent labels to append to the domain prefix
+  ---  * Resolver address
+  ---  * Sending rate
+  op nxdomainClient : Address Name Nat Address Float -> Config .
+  eq nxdomainClient(ADDR, NAME, N, RSV, F)
+    = < ADDR : NxdomainClient | counter: 0,
+                                namePrefix: NAME,
+                                numFakeLabels: N,
+                                resolver: RSV,
+                                status: running,
+                                atkrRate: F >
+      [atkrInitDelay, atkrSendNext from ADDR to ADDR, 0] . --- start trigger message
+
+  --- > Receive trigger message and send next attacker query.
+  --- Notes:
+  ---  * The client uses one resolver.
+  rl [nxdomain-client-send-next] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', clQueryLog: TAQL, STATE' >
+  < CL : NxdomainClient | counter: N,
+                          namePrefix: NAME,
+                          numFakeLabels: N',
+                          resolver: RSV,
+                          status: STATUS,
+                          atkrRate: F,
+                          STATE >
+  {T, atkrSendNext from CL to CL}
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incr(clientId(CL, N), CL, IAF') else IAF' fi),
+                    totalSent: incrAF(CL, AF'),
+                    clQueryLog: (if monitorQueryLog?
+                                  then tupleAddrQuery(CL, query(clientId(CL, N), fakeName(N, N', NAME), a)) TAQL
+                                  else TAQL
+                                fi),
+                    STATE' >
+  < CL : NxdomainClient | counter: s N,
+                          namePrefix: NAME,
+                          numFakeLabels: N',
+                          resolver: RSV,
+                          status: STATUS,
+                          atkrRate: F,
+                          STATE >
+  if STATUS == running then
+    [delay, query(clientId(CL, N), fakeName(N, N', NAME), a) from CL to RSV, drop?]
+    [sampleExp(F), atkrSendNext from CL to CL, 0]
+  else
+    null
+  fi .
+
+  --------------------------
+  --- [REPEATING CLIENT] ---
+  --------------------------
+  --- A generic repeating client that sends the same queries over and over again, until it receives a special stop
+  --- message.
+  --- The repeating client is parametric in:
+  ---  * List of queries to repeat
+  ---  * Rate at which queries are being sent
+  op RepeatingClient : -> ActorType .
+
+  --- A convenience function to easily obtain a repeating client. The returned Config contains both the repeating
+  ---   client and the trigger message to start.
+  --- Args:
+  ---  * Address for repeating client
+  ---  * Resolver address
+  ---  * List of queries that should be repeated
+  ---  * Sending rate
+  op repeatingClient : Address Address List{Query} Float -> Config .
+  eq repeatingClient(ADDR, RSV, QS, F)
+    = < ADDR : RepeatingClient | counter: 0,
+                                 resolver: RSV,
+                                 queries: QS,
+                                 allQueries: QS,
+                                 status: running,
+                                 atkrRate: F >
+      [atkrInitDelay, atkrSendNext from ADDR to ADDR, 0] . --- start trigger message
+
+  --- > Receive trigger message and send next attacker query.
+  --- Notes:
+  ---  * The client uses one resolver.
+  crl [repeating-client-send-next] :
+  < MON : Monitor | msgsSent: IAF', totalSent: AF', clQueryLog: TAQL, STATE' >
+  < CL : RepeatingClient | counter: N,
+                           resolver: RSV,
+                           queries: QS,
+                           allQueries: QS',
+                           status: STATUS,
+                           atkrRate: F,
+                           STATE >
+  {T, atkrSendNext from CL to CL}
+=>
+  < MON : Monitor | msgsSent: (if monitorDetailedMsgStats? then incr(clientId(CL, N), CL, IAF') else IAF' fi),
+                    totalSent: incrAF(CL, AF'),
+                    clQueryLog: (if monitorQueryLog?
+                                  then tupleAddrQuery(CL, query(clientId(CL, N), NAME, QTYPE)) TAQL
+                                  else TAQL
+                                fi),
+                    STATE' >
+  < CL : RepeatingClient | counter: s N,
+                           resolver: RSV,
+                           queries: QS''',
+                           allQueries: QS',
+                           status: STATUS,
+                           atkrRate: F,
+                           STATE >
+  (if STATUS == running then
+    [delay, query(clientId(CL, N), NAME, QTYPE) from CL to RSV, drop?]
+    [sampleExp(F), atkrSendNext from CL to CL, 0]
+  else
+    null
+  fi)
+  if
+     --- Start next iteration through list if necessary
+     QS'' := if QS =/= nil then QS else QS' fi /\
+     query(ID, NAME, QTYPE) QS''' := QS''
+     .
+
+  -----------------------------------
+  --- [MALICIOUS CLIENT - COMMON] ---
+  -----------------------------------
+  --- The rules below model common functionality of both NxdomainClients and RepeatingClients.
+
+  --- > Receive stop signal, change status.
+  crl [malicious-client-stop] :
+  < CL : ACTOR | status: running, STATE >
+  {T, stopSignal from ADDR to CL}
+=>
+  < CL : ACTOR | status: stopped, STATE >
+  if
+     ACTOR == NxdomainClient or ACTOR == RepeatingClient .
+
+  --- > Receive and discard response from resolver.
+  crl [malicious-client-recv-response] :
+  < MON : Monitor | msgsRcv: IAF, totalRcv: AF, clRespLog: TARL, STATE' >
+  < CL : ACTOR | resolver: RSV, STATE >
+  {T, response(ID, QNAME, ANS, AUTH, ADD, RCODE) from RSV to CL}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, CL, IAF) else IAF fi),
+                    totalRcv: incrAF(CL, AF),
+                    clRespLog: (if monitorQueryLog?
+                                  then tupleAddrResp(CL, response(ID, QNAME, ANS, AUTH, ADD, RCODE)) TARL
+                                  else TARL
+                               fi),
+                    STATE' >
+  < CL : ACTOR | resolver: RSV, STATE >
+  if
+     ACTOR == NxdomainClient or ACTOR == RepeatingClient .
+
+  -----------------------------------
+  --- [MALICIOUS NXNS NAMESERVER] ---
+  -----------------------------------
+  --- A malicious name server for an NXNS Attack. The name server responds to queries by sending a large number of
+  --- delegations to non-existent name servers.
+  --- The malicious NXNS name server is parametric in:
+  ---  * Target domain for the delegations, i.e., the fake name servers are located below this domain
+  ---  * Number of fake delegations that are sent for each query
+  ---  * Number of non-existent labels to append to the domain prefix (cf. QNAME minimization)
+  ---  * TTL for the NS records
+  op MaliciousNXNSNameserver : -> ActorType .
+
+  --- A convenience function to easily obtain a malicious NXNS name server. Note that it is still necessary to insert
+  --- the delegation to the attacker's zone in the parent zone.
+  --- Args:
+  ---  * Address for malicious name server
+  ---  * Domain prefix: target domain for the delegations, i.e., the fake name servers are located below this domain
+  ---  * Number of fake delegations to create for each query
+  ---  * Number of non-existent labels to append to the domain prefix
+  ---  * TTL for the NS records
+  op maliciousNXNSNameserver : Address Name Nat Nat Float -> Config .
+  eq maliciousNXNSNameserver(ADDR, NAME, N, N', TTL)
+    = < ADDR : MaliciousNXNSNameserver | counter: 0,
+                                         namePrefix: NAME,
+                                         numFakeDel: N,
+                                         numFakeLabels: N',
+                                         ttl: TTL > .
+
+  --- > Receive query from resolver and respond with a fake delegation.
+  --- Notes:
+  ---  * This rule does not enforce name server resource bounds. The query is answered immediately, with zero
+  ---    processing delay.
+  rl [malicious-nxns-nameserver-recv-query-unbounded] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', nsQueryLog: TAQL, STATE' >
+  < NS : MaliciousNXNSNameserver | counter: N, numFakeDel: N', numFakeLabels: N'', namePrefix: NAME', ttl: TTL, STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, NS, IAF') else IAF' fi),
+                    totalRcv: incrAF(NS, AF),
+                    totalSent: incrAF(NS, AF'),
+                    nsQueryLog: (if monitorQueryLog? then tupleAddrQuery(NS, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    STATE' >
+  < NS : MaliciousNXNSNameserver | counter: (N + N'), numFakeDel: N', numFakeLabels: N'', namePrefix: NAME', ttl: TTL, STATE >
+  [delay, response(ID, QNAME, nil, fakeDelegationRecords(N', N, N'', QNAME, NAME', TTL), nil, 0)
+    from NS to RSV, drop?] .
+
+  -----------------------------------
+  --- [MALICIOUS iDNS NAMESERVER] ---
+  -----------------------------------
+  --- A malicious name server for an iDNS attack (indefinitely delegating name server). The name server responds to
+  --- each query with a glueless delegation to a sibling domain, s.t. the resolver needs to query the same name server
+  --- again, leading to a long delegation chain
+  --- The malicious iDNS name server is parametric in:
+  ---  * Number of delegations that are sent for each query
+  ---  * Number of non-existent labels to append to the domain prefix (cf. QNAME minimization)
+  ---  * TTL for the NS records
+  op MaliciousIDNSNameserver : -> ActorType .
+
+  --- A convenience function to easily obtain a malicious iDNS name server. Note that it is still necessary to insert
+  --- the delegation to the attacker's zone in the parent zone.
+  --- Args:
+  ---  * Address for malicious name server
+  ---  * Domain prefix: target domain for the delegations
+  ---  * Number of delegations to create for each query
+  ---  * Number of non-existent labels to append to the delegation target
+  ---  * TTL for the NS records
+  op maliciousIDNSNameserver : Address Name Nat Nat Float -> Config .
+  eq maliciousIDNSNameserver(ADDR, NAME, N, N', TTL)
+    = < ADDR : MaliciousIDNSNameserver | namePrefix: NAME,
+                                         numFakeDel: N,
+                                         numFakeLabels: N',
+                                         ttl: TTL > .
+
+  --- > Receive minimized query from resolver and respond with a NODATA response (with a synthesized, fake SOA record).
+  --- Notes:
+  ---  * This rule does not enforce name server resource bounds. The query is answered immediately, with zero
+  ---    processing delay.
+  crl [malicious-idns-nameserver-recv-minimized-query-unbounded] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', nsQueryLog: TAQL, STATE' >
+  < NS : MaliciousIDNSNameserver | numFakeDel: N, numFakeLabels: N', namePrefix: NAME', ttl: TTL, STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, NS, IAF') else IAF' fi),
+                    totalRcv: incrAF(NS, AF),
+                    totalSent: incrAF(NS, AF'),
+                    nsQueryLog: (if monitorQueryLog? then tupleAddrQuery(NS, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    STATE' >
+  < NS : MaliciousIDNSNameserver | numFakeDel: N, numFakeLabels: N', namePrefix: NAME', ttl: TTL, STATE >
+  [delay, response(ID, QNAME, nil, < NAME', soa, TTL, soaData(TTL) >, nil, 0)
+    from NS to RSV, drop?]
+  if
+     --- QNAME is a subdomain of namePrefix
+     NAME'' . NAME' := QNAME /\
+     --- Not the full QNAME (but a minimized version)
+     numLabels(NAME'') <= N' .
+
+  --- > Receive query from resolver and respond with a fake delegation.
+  --- Notes:
+  ---  * This rule does not enforce name server resource bounds. The query is answered immediately, with zero
+  ---    processing delay.
+  crl [malicious-idns-nameserver-recv-full-query-unbounded] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', nsQueryLog: TAQL, STATE' >
+  < NS : MaliciousIDNSNameserver | numFakeDel: N, numFakeLabels: N', namePrefix: NAME', ttl: TTL, STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, NS, IAF') else IAF' fi),
+                    totalRcv: incrAF(NS, AF),
+                    totalSent: incrAF(NS, AF'),
+                    nsQueryLog: (if monitorQueryLog? then tupleAddrQuery(NS, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    STATE' >
+  < NS : MaliciousIDNSNameserver | numFakeDel: N, numFakeLabels: N', namePrefix: NAME', ttl: TTL, STATE >
+  [delay, response(ID, QNAME, nil, fakeDelegationRecords(N, N'', N', QNAME, label2(N'', s N''') . NAME', TTL), nil, 0)
+    from NS to RSV, drop?]
+  if
+     --- QNAME is a subdomain of namePrefix
+     NAME'' . NAME' := QNAME /\
+     --- Full QNAME (not a minimized version)
+     numLabels(NAME'') == s N' /\
+     --- Extract the relevant part (delegation level)
+     label2(N'', N''') := lastLabel(NAME'') .
+
+  ----------------------------
+  --- [DELAYED NAMESERVER] ---
+  ----------------------------
+  --- A name server that answers queries correctly, but with a configurable delay.
+  op DelayedNameserver : -> ActorType .
+
+  --- > Receive query from resolver, "match down" in the database and send a delayed response.
+  crl [delayed-nameserver-recv-query-unbounded] :
+  < MON : Monitor | msgsRcv: IAF, msgsSent: IAF', totalRcv: AF, totalSent: AF', nsQueryLog: TAQL, nsRespLog: TARL, STATE' >
+  < NS : DelayedNameserver | db: DB, nsDelay: F, STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    msgsSent: (if monitorDetailedMsgStats? then incr(ID, NS, IAF') else IAF' fi),
+                    totalRcv: incrAF(NS, AF),
+                    totalSent: incrAF(NS, AF'),
+                    nsQueryLog: (if monitorQueryLog? then tupleAddrQuery(NS, query(ID, QNAME, QTYPE)) TAQL else TAQL fi),
+                    nsRespLog: (if monitorQueryLog? then tupleAddrResp(NS, RESP) TARL else TARL fi),
+                    STATE' >
+  < NS : DelayedNameserver | db: DB, nsDelay: F, STATE >
+  [delay + F + 1000.0, RESP from NS to RSV, drop?]
+  if RESP := matchDown(ID, QNAME, QTYPE, DB) .
+
+  ---------------------------------
+  --- [UNRESPONSIVE NAMESERVER] ---
+  ---------------------------------
+  --- A "name server" that just drops any query it receives. This can be useful to model a victim host that receives
+  --- many queries.
+  --- In contrast to the dropMsgsForNXActors? config option (which enables dropping of messages to non-existent
+  --- actors), this rule still updates the monitor statistics, and hence allows to see how many queries were sent to
+  --- this address.
+  op UnresponsiveNameserver : -> ActorType .
+
+  --- > Receive query from resolver and drop it.
+  --- Notes:
+  ---  * This rule can be used to model an inexistent name server.
+  rl [unresponsive-nameserver-drop-query] :
+  < MON : Monitor | msgsRcv: IAF, totalRcv: AF, STATE' >
+  < NS : UnresponsiveNameserver | STATE >
+  {T, query(ID, QNAME, QTYPE) from RSV to NS}
+=>
+  < MON : Monitor | msgsRcv: (if monitorDetailedMsgStats? then incr(ID, NS, IAF) else IAF fi),
+                    totalRcv: incrAF(NS, AF),
+                    STATE' >
+  < NS : UnresponsiveNameserver | STATE > .
+
+endm

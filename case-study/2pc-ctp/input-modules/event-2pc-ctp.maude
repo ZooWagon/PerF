@@ -1,0 +1,26 @@
+load ../events
+load 2pc-ctp
+
+mod EVENT-2PC-CTP is 
+  inc EVENTS .
+
+  *** user-specified interesting events 
+  ops start commit abort endtxn recv-ack : Nat -> Event [ctor] .
+  ops ctp-start ctp-know : Nat -> Event .
+
+  vars TID N : Nat .
+
+  *** rule-specific mapping
+  eq eventMap = 
+    ['prepare, start(TID)] ;; 
+    ['recv-ack, recv-ack(TID)] ;;
+    ['decide-query, ctp-start(N)] ;;
+    ['recv-query-commit, ctp-know(N)] ;;
+    ['recv-query-abort, ctp-know(N)] ;;
+    ['commit, commit(TID)] ;; 
+    ['abort, abort(TID)] [nonexec] .
+endm
+---(
+      ['commit, commit(TID) ; endtxn(TID)] ;; 
+    ['abort, abort(TID) ; endtxn(TID)] [nonexec] .
+)

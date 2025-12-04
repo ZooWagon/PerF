@@ -1,0 +1,248 @@
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Thu Dec  4 22:42:11 2025
+Maude> Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module SAMPLER.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: reparsing module PARAMETERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module SORTS due to changes in imported modules.
+Advisory: reparsing module MONITOR due to changes in imported modules.
+Advisory: reparsing module MSG due to changes in imported modules.
+Advisory: reparsing module SORTS-AUX due to changes in imported modules.
+Advisory: reexamining view Record.
+Advisory: reexamining view Query.
+Advisory: reexamining view Name.
+Advisory: reparsing module NODE due to changes in imported modules.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module PARAMETERS-COMMON.
+Advisory: redefining module SAMPLER.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SCHEDULER.
+Advisory: redefining module APMAUDE.
+Advisory: redefining module PARAMETERS.
+Advisory: reparsing module PARAMETERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module SORTS due to changes in imported modules.
+Advisory: reparsing module AUX-COMMON due to changes in imported modules.
+Advisory: reparsing module MONITOR due to changes in imported modules.
+Advisory: reparsing module MSG due to changes in imported modules.
+Advisory: reparsing module SORTS-AUX due to changes in imported modules.
+Advisory: reexamining view Record.
+Advisory: reexamining view Query.
+Advisory: reexamining view Name.
+Advisory: reparsing module NODE due to changes in imported modules.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SCHEDULER.
+Advisory: redefining module APMAUDE.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: reparsing module SCHEDULER due to changes in imported modules.
+Advisory: reparsing module TEST-HELPERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module AUX due to changes in imported modules.
+Advisory: reparsing module PARAMETERS due to changes in imported modules.
+Advisory: reparsing module APMAUDE due to changes in imported modules.
+Advisory: reparsing module PARAMETERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module AUX-COMMON due to changes in imported modules.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module TEST-HELPERS-COMMON.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SCHEDULER.
+Advisory: redefining module APMAUDE.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module TEST-HELPERS.
+Advisory: reparsing module SCHEDULER due to changes in imported modules.
+Advisory: reparsing module TEST-HELPERS-COMMON due to changes in imported
+    modules.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module PARAMETERS-COMMON.
+Advisory: redefining module SAMPLER.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SCHEDULER.
+Advisory: redefining module APMAUDE.
+Advisory: redefining module PARAMETERS.
+Advisory: reparsing module PARAMETERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module SORTS due to changes in imported modules.
+Advisory: redefining module AUX-COMMON.
+Advisory: reparsing module MONITOR due to changes in imported modules.
+Advisory: reparsing module MSG due to changes in imported modules.
+Advisory: reparsing module SORTS-AUX due to changes in imported modules.
+Advisory: reexamining view Record.
+Advisory: reexamining view Query.
+Advisory: reexamining view Name.
+Advisory: reparsing module NODE due to changes in imported modules.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: redefining module PARAMETERS-COMMON.
+Advisory: redefining module SAMPLER.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SCHEDULER.
+Advisory: redefining module APMAUDE.
+Advisory: redefining module PARAMETERS.
+Advisory: reparsing module PARAMETERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module SORTS due to changes in imported modules.
+Advisory: redefining module AUX.
+Advisory: reparsing module AUX-COMMON due to changes in imported modules.
+Advisory: reparsing module MONITOR due to changes in imported modules.
+Advisory: reparsing module MSG due to changes in imported modules.
+Advisory: reparsing module SORTS-AUX due to changes in imported modules.
+Advisory: reexamining view Record.
+Advisory: reexamining view Query.
+Advisory: reexamining view Name.
+Advisory: reparsing module NODE due to changes in imported modules.
+Advisory: redefining module ADDRESS.
+Advisory: redefining view Address.
+Advisory: redefining module ACTOR-MODEL.
+Advisory: redefining module SORTS.
+Advisory: redefining view Name.
+Advisory: redefining view Record.
+Advisory: redefining view Query.
+Advisory: redefining module SORTS-AUX.
+Advisory: redefining view ZoneState.
+Advisory: redefining module MSG.
+Advisory: redefining view Id.
+Advisory: redefining module NODE.
+Advisory: redefining module MONITOR.
+Advisory: reparsing module PARAMETERS due to changes in imported modules.
+Advisory: reparsing module APMAUDE due to changes in imported modules.
+Advisory: reparsing module SCHEDULER due to changes in imported modules.
+Advisory: reparsing module PARAMETERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module AUX due to changes in imported modules.
+Advisory: reparsing module AUX-COMMON due to changes in imported modules.
+Advisory: reparsing module TEST-HELPERS due to changes in imported modules.
+Advisory: reparsing module TEST-HELPERS-COMMON due to changes in imported
+    modules.
+Advisory: reparsing module PROPERTIES due to changes in imported modules.
+==========================================
+rewrite in INIT-DNS : avgQueryDuration(initConfig) .
+rewrites: 168564 in 29ms cpu (28ms real) (5812551 rewrites/second)
+result FiniteFloat: 6.0000000715189362e+3
+Maude> Bye.

@@ -1,0 +1,14 @@
+load ../fault-injector
+load init-2pc
+
+mod 2PC-FAULT-CONFIG is
+  inc FAULT-INJECTOR .
+  inc INIT-2PC .
+  
+  eq fbhv = msgloss .
+  eq MLlossRate = 0.3 .
+  eq MLtargetRecv = ch2 .
+  eq MLtargetSrc = c .
+  eq MLtargetRl = 'decision .
+
+endm

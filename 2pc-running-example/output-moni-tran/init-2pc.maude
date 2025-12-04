@@ -1,0 +1,16 @@
+load 2pc
+
+mod INIT-2PC is including 2PC .
+  ops c ch1 ch2 : -> Oid .  ops p1 p2 : -> Proposal .
+
+  op initstate : -> Config .
+  eq fbhv = msgloss .
+  eq MLlossRate = 0.3 .
+  eq MLtargetRecv = ch2 .
+  eq MLtargetSrc = c .
+  eq MLtargetRl = 'decision .
+  eq initstate = (start to c) < c : Coord | proposals: (p1 ; p2), cohorts: (ch1 ch2), waiting: empty, results: emptyPB > < ch1 : Cohort | votes: ((p1 |-> true) , (p2 |-> false)) > < ch2 : Cohort | votes: ((p1 |-> true) , (p2 |-> true)) > 
+    < moni : Monitor | events: empty >
+    { 0.0 | nilSL } < ctrl : Controller | fbhvs: fbhv >
+    < ml : MsgLoss | lossRate: MLlossRate, targetRecv: MLtargetRecv, targetSrc: MLtargetSrc, targetRl: MLtargetRl > .
+endm

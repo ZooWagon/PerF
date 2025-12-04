@@ -1,0 +1,39 @@
+
+load output-moni-tran/init-2pc
+
+mod ANALYSIS-2PC is
+  inc INIT-2PC .
+
+  *** PVeStA interface
+  eq initState = 
+    initstate .
+
+  var C : Config . var AS : AttributeSet .
+  vars T T2 : Float . var P : Proposal .
+  var AC : ActorConfig .
+  vars TES TES2 TES3 : TimedEvents .
+  vars E E' : Events .
+
+  *** set msg delay for scheduler
+  eq md = lognormal(0.0, 1.0, rand) .
+  
+  *** Quatex
+  eq val(0, C) = avglatency(C) .
+  
+  op avglatency : Config -> Float .
+  eq avglatency(< moni : Monitor | events: TES > C) 
+    = totalLatency(TES) / numberOfProposal(TES) .
+
+  op totalLatency : TimedEvents -> Float .
+  eq totalLatency(TES ; (E , propose(P) @ T) ; TES2 ; (E' , finish(P) @ T2) ; TES3) 
+    = T2 - T + totalLatency(TES ; TES2 ; TES3) .
+  eq totalLatency(TES) = 0.0 [owise] .
+
+  op numberOfProposal : TimedEvents -> Float .
+  eq numberOfProposal(TES ; (E , propose(P) @ T) ; TES2 ; (E' , finish(P) @ T2) ; TES3) 
+    = 1.0 + numberOfProposal(TES ; TES2 ; TES3) .
+  eq numberOfProposal(TES) = 0.0 [owise] .
+
+endm
+
+set clear rules off .

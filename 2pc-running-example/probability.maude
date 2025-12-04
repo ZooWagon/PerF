@@ -1,0 +1,38 @@
+
+mod SAMPLER is
+  pr RANDOM .
+  pr COUNTER .
+  pr CONVERSION .
+  op e : -> Float .
+  eq e = 2.71828 .
+  op rand : -> [Float] .
+  rl rand => float(random(counter) / 4294967295) .
+endm
+
+mod PROBABILITY is
+  pr SAMPLER .
+
+  vars MEAN SD X : Float .
+  op normal : Float Float Float  -> Float .
+  eq normal(MEAN,SD,X) = 
+    (1.0 / (SD * sqrt(2.0 * pi))) * e ^ (- 0.5 * ((X - MEAN) / SD) ^ 2.0) .
+
+  op lognormal : Float Float Float  -> Float .
+  eq lognormal(MEAN,SD,X) =
+    (1.0 / (X * SD * sqrt(2.0 * pi))) * exp((log(X) - MEAN) ^ 2.0 / (- 2.0 * SD ^ 2.0)) .
+
+  vars SCALE SHAPE : Float .
+  op weibull : Float Float Float  -> Float .
+  eq weibull(SCALE,SHAPE,X) 
+   = if X >= 0.0 then (SHAPE / SCALE) * (X / SCALE) ^ (SHAPE - 1.0) * e ^ (- (X / SCALE) ^ SHAPE)  else 0.0 fi .
+
+  op uniform : Float Float Float  -> Float .
+  vars MIN MAX : Float .
+  eq uniform(MIN,MAX,X) = if MIN <= X and X <= MAX then 1.0 / (MAX - MIN) else 0.0 fi .
+
+  op exponential : Float Float  -> Float .
+  vars RATE : Float .
+  eq exponential(RATE,X) = e ^ (- RATE * X) .
+endm
+
+--- set rules clear off .

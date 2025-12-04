@@ -1,0 +1,689 @@
+load ../input-modules/event-fhs-full.maude
+load ../fault-lib
+
+mod FAULT-TEMPERING is
+  --- abbr. TP
+  inc FAULT-INTERFACE .
+
+  --- evil sender
+  op TPevilSrc :_ : AddressListF -> Attribute .
+  --- temper content
+  op TPtemperContent :_ : ContentTemperingPairList -> Attribute .
+  --- suffered msg
+  op TPsufferedMsg :_ : ScheduleList -> Attribute .
+
+  sorts ContentTemperingPair ContentTemperingPairList .
+  subsort ContentTemperingPair < ContentTemperingPairList .
+  op [_|_] : Content Content -> ContentTemperingPairList [ctor] .
+  op nilCTPL : -> ContentTemperingPairList .
+  op _::_ : ContentTemperingPairList ContentTemperingPairList -> ContentTemperingPairList [assoc id: nilCTPL] .
+
+  vars CO CO1 CO2 : Content . vars A1 A2 : Address .
+  vars AL1 AL2 : AddressListF . vars CTPL1 CTPL2 : ContentTemperingPairList .
+  vars EN : Nat .
+  vars SL SL1 SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R DT : Float .
+  var AC : ActorConfig .
+
+  rl [tempering] :
+    < injector : Injector | 
+      TPsufferedMsg : SL1,
+      TPevilSrc : AL1,
+      TPtemperContent : (CTPL1 :: [CO | CO2] :: CTPL2),
+      faultMsg :{ T, (CO from A1 to A2) }, 
+      faultFlag : faultLicense(tp), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | 
+      TPsufferedMsg : (SL1 ; [T, CO from A1 to A2, 0]),
+      TPevilSrc : AL1,
+      TPtemperContent : (CTPL1 :: [CO | CO2] :: CTPL2),
+      faultMsg :{ T, (CO2 from A1 to A2) }, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL} .
+
+  --- TPnotFault(curMsg, evil sender, tempering content)
+  op TPnotFault : ActiveMsg AddressListF ContentTemperingPairList -> Bool .
+  ceq TPnotFault({T, CO from A1 to A2}, 
+    (AL1 ^:^ A1 ^:^ AL2), (CTPL1 :: [CO1 | CO2] :: CTPL2))
+    = false if CO == CO1 .
+  eq TPnotFault({T, CO from A1 to A2}, AL1, CTPL1) = true [owise] .
+endm
+
+mod FAULT-COMPOSITE is
+  inc FAULT-TEMPERING .
+
+  vars M1 M2 M3 M4 M5 M6 M7 R1 R2 R31 R32 R41 R42 R5 T : Float .
+  var FL : FaultList . vars FT FT2 : FaultType .
+  var AS : AttributeSet .
+  ---   var PAAL11 PAAL22 : AddressListF . var PAFS : PAFaultStatus .
+  vars SL SL2 : ScheduleList . vars O1 O2 : Address . var MP : Content .
+  ---   var CRFS : CRFaultStatus . vars CrashOid : Address . var CRVCL : ContentList .
+  var AC : ActorConfig . var MSG : Msg . var AM : ActiveMsg .
+  ---   var ECECO : ContentEquivocatePairList . var ECAL : AddressListF .
+  var TPCTPL : ContentTemperingPairList . var TPAL : AddressListF .
+  crl [make-fault-license] :
+  < injector : Injector | 
+  ---     MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+  ---     PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+  ---       PAoccurTime : R31, PAdurationTime : R32,
+  ---     CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid, CRvulnerableContent : CRVCL,
+  ---       CRcrashRate : R41, CRrebootRate : R42,
+  ---     DEmood : M5, DEfaultRate : R5,
+  ---     ECevilSrc : ECAL, ECequivocateContent : ECECO,
+    TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+    faultLog : SL2,
+    faultRegi : FL,
+    faultMsg : null, 
+    faultFlag : nonFF, AS > 
+    {T, (MP from O2 to O1)} AC {T | SL}
+  =>
+  < injector : Injector | 
+  ---     MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+  ---     PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+  ---       PAoccurTime : R31, PAdurationTime : R32,
+  ---     CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid,  CRvulnerableContent : CRVCL,
+  ---       CRcrashRate : R41, CRrebootRate : R42,
+  ---     DEmood : M5, DEfaultRate : R5,
+  ---     ECevilSrc : ECAL, ECequivocateContent : ECECO,
+    TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+    faultLog : (SL2 ; [T,(debugFlagM(0.0,0.0,0.0,0.0,0.0,0.0,1.0) to injector),0]),
+    faultRegi : FL,
+    faultMsg : {T, (MP from O2 to O1)}, 
+    faultFlag : genefaultLicense(
+      geneFaultList((nonFault :: FL),(false
+  ---           :: (not MLnotFault(M1,R1)) 
+  ---           :: (not MDnotFault(M2,R2)) 
+  ---           :: (not PAnotFault(PAFS,M3,R31,R31 + R32,T,O1,O2,PAAL11,PAAL22))
+  ---           :: (not CRnotFault(CRFS,M4,R41,R42,CrashOid,O1,MP,CRVCL))
+  ---           :: (not DEnotFault(M5,R5)) 
+  ---           :: (not ECnotFault({T, (MP from O2 to O1)},ECAL,ECECO))
+          :: (not TPnotFault({T, (MP from O2 to O1)},TPAL,TPCTPL))
+          )),0.0,rand,nonFault),
+    AS > 
+    AC {T | SL} faultTrigger
+  if false
+  ---     or not MLnotFault(M1,R1)
+  ---     or not MDnotFault(M2,R2)
+  ---     or not PAnotFault(PAFS,M3,R31,R31 + R32,T,O1,O2,PAAL11,PAAL22) 
+  ---     or not CRnotFault(CRFS,M4,R41,R42,CrashOid,O1,MP,CRVCL) 
+  ---     or not DEnotFault(M5,R5)
+  ---     or not ECnotFault({T, (MP from O2 to O1)},ECAL,ECECO)
+    or not TPnotFault({T, (MP from O2 to O1)},TPAL,TPCTPL)
+    or false .
+  rl [fault-update-mood] :
+    < injector : Injector | 
+  ---       MLmood : M1, 
+  ---       MDmood : M2, 
+  ---       PAmood : M3, 
+  ---       CRmood : M4,
+  ---       DEmood : M5,
+      faultMsg : {T, MSG}, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+  ---       MLmood : 0.9999, 
+  ---       MDmood : 0.9999,
+  ---       PAmood : 0.9999, 
+  ---       CRmood : 0.9999,
+  ---       DEmood : 0.9999,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    {T, MSG} AC {T | SL} .
+  rl [fault-update-mood-2] :
+    < injector : Injector | 
+  ---       MLmood : M1, 
+  ---       MDmood : M2, 
+  ---       PAmood : M3, 
+  ---       CRmood : M4,
+  ---       DEmood : M5,
+      faultMsg : null, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+  ---       MLmood : rand, 
+  ---       MDmood : rand,
+  ---       PAmood : rand, 
+  ---       CRmood : rand,
+  ---       DEmood : rand,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    AC {T | SL} .
+
+  --- geneFaultList(FL,BL)
+  --- generate an FaultList, extract FL for according Bool in BL is true  
+  var BL : BoolList . var B : Bool .
+  op geneFaultList : FaultList BoolList -> FaultList [ctor] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = FT :: geneFaultList(FL,BL)
+    if B [owise] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = geneFaultList(FL,BL)
+    if not B [owise] .
+  eq geneFaultList(nilFL,nilBL) = nilFL .
+  --- generate faultLicense from FaultList, indicating FT be selected
+  --- genefaultLicense(FaultList,highestScore,currentScore,FaultType)
+  op genefaultLicense : FaultList Float Float FaultType -> FaultFlag [ctor] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R2,rand,FT)
+    if R2 > R1 [owise] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R1,rand,FT2)
+    if R2 <= R1 [owise] .
+  eq genefaultLicense(nilFL,R1,R2,FT) = faultLicense(FT) .
+endm
+
+load ../apmaude
+
+mod BLOCKCHAIN is
+
+  inc NAT .
+  inc APMAUDE .
+
+  --- block def
+  sorts Block BlockList .
+  subsort Block < BlockList .
+  op nilBL : -> BlockList .
+  op _::_ : BlockList BlockList -> BlockList [assoc id: nilBL] .
+  op nullBlock : -> Block .
+
+  op [[_]] : AttributeSet -> Block .
+  op Bview :_ : Nat -> Attribute .
+  op Bparent :_ : Nat -> Attribute .
+  op Bqc :_ : QuorumCertificate -> Attribute .
+
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 M5 R1 R2 R31 R32 R41 R42 R5 : Float .
+  var ASFAULT : AttributeSet .
+  var TPCTPL : ContentTemperingPairList . var TPAL : AddressListF .
+  var N : Nat . vars AS AS1 : AttributeSet .
+  op getBview : Block -> Nat .
+  eq getBview([[Bview : N, AS]]) = N .
+  op getBparent : Block -> Nat .
+  eq getBparent([[Bparent : N, AS]]) = N .
+
+  --- QC def
+  sorts QuorumCertificate QuorumCertificateList .
+  subsort QuorumCertificate < QuorumCertificateList .
+  op nilQCL : -> QuorumCertificateList .
+  op _::_ : QuorumCertificateList QuorumCertificateList -> QuorumCertificateList [assoc id: nilQCL] .
+  op nullQC : -> QuorumCertificate .
+
+  sort QCType .
+  ops aggQC highQC : -> QCType .
+
+  op <<_>> : AttributeSet -> QuorumCertificate .
+  op QCtype :_ : QCType -> Attribute .
+  op QCview :_ : Nat -> Attribute .
+  op QCsign :_ : AddressSetF -> Attribute .
+  
+  var QCT : QCType .
+  op getBqctype : Block -> QCType .
+  eq getBqctype([[ Bqc : << QCtype : QCT, AS1 >>, AS ]]) = QCT .
+
+  op len : QuorumCertificateList -> Nat .
+  var QC : QuorumCertificate . var QCL : QuorumCertificateList .
+  eq len(QC :: QCL) = 1 + len(QCL) .
+  eq len(nilQCL) = 0 .
+
+endm
+
+mod REPLICA is
+
+  inc BLOCKCHAIN .
+
+  op prepare : Block -> Content .
+  --- QC, request view num
+  op nextView : QuorumCertificate Nat -> Content .
+  op vote : QuorumCertificate -> Content .
+  op trigger : -> Content .
+  --- QC, require view
+  op tmo : QuorumCertificate Nat -> Content .
+
+  op Replica : -> ActorType .
+  op Primary : -> ActorType .
+
+  --- cur view num: cur recved highest valid block view num
+  op curView :_ : Nat -> Attribute .
+  op recvNextView :_ : QuorumCertificateList -> Attribute .
+  op recvVote :_ : QuorumCertificateList -> Attribute .
+  op commitBlock :_ : BlockList -> Attribute .
+  op recvBlock :_ : BlockList -> Attribute .
+  op nodeNum :_ : Nat -> Attribute .
+  op nodeF :_ : Nat -> Attribute .
+  op nodeOther :_ : AddressSetF -> Attribute .
+  op tmoQC :_ : QuorumCertificate -> Attribute .
+  --- view will enter by tmo
+  op tmoV :_ : Nat -> Attribute .
+  --- next new view trigger by nextView msg
+  op newView :_ : Nat -> Attribute .
+  --- proposed block
+  op proposedBlock :_ : BlockList -> Attribute .
+
+endm
+
+mod FHS is
+  inc EVENT-FHS-FULL .
+
+  inc REPLICA .
+
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 M5 R1 R2 R31 R32 R41 R42 R5 : Float .
+  var ASFAULT : AttributeSet .
+  var TPCTPL : ContentTemperingPairList . var TPAL : AddressListF .
+  vars A A1 A2 : Address . vars ADS ADS1 ADS2 : AddressSetF .
+  vars T : Float . vars SL SL1 SL2 : ScheduleList .
+  var SM : ScheduleMsg .
+  vars N N1 N2 V V1 V2 V3 : Nat .
+  vars AS AS1 AS2 : AttributeSet .
+  vars QC QC1 QC2 : QuorumCertificate .
+  vars QCL QCL1 QCL2 : QuorumCertificateList .
+  vars QCT QCT1 QCT2 : QCType .
+  vars B B1 B2 : Block .
+  vars BL BL1 BL2 BL3 BL4 : BlockList .
+
+  op VLIMIT : -> Nat .
+
+  op TMOLIMIT : -> Float .
+
+  --- getPrimary(curView,nodeNum)
+  op getPrimary : Nat Nat -> Nat .
+  eq getPrimary(V,N) = V rem N .
+
+  crl [start] :
+    {T, trigger from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : 0, recvNextView : nilQCL, recvVote : nilQCL,
+      commitBlock : (BL1 :: [[Bview : 0, Bparent : 0, Bqc : nullQC]]), recvBlock : BL2, AS >
+    insertList({T | SL},delay-msg(vote(<< QCtype : highQC, QCview : 0, QCsign : A1 >>) from A1 to getPrimary(1,N),T)) 
+  if TPnotFault({T, (trigger from A2 to A1)},TPAL,TPCTPL) .
+
+  --- primary
+  crl [primary-vote] :
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, 
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      proposedBlock : BL1, AS >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    {T | SL}
+  =>
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, 
+      curView : V, recvNextView : nilQCL, recvVote : nilQCL,
+      proposedBlock : (BL1 :: B), AS >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (propose-v(A1,B) @ T)) >
+    insertList({T | SL}, propagate prepare(B) from A1 to ADS ^;^ A1 at T)
+  if len(QCL2) >= sd(N,N1) /\ B := GenerateBlock(GenerateQC(QCL2, A1),V + 1) /\ V < VLIMIT .
+
+  ceq eagerEnabled(
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, 
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      proposedBlock : BL1, AS >
+  ) = true if len(QCL2) >= sd(N,N1) /\ V < VLIMIT .
+
+  --- GenerateQC(QC list of vote, signature address), gene a highQC of max QCview
+  op GenerateQC : QuorumCertificateList Address -> QuorumCertificate .
+  op $GenerateQC : QuorumCertificateList QuorumCertificate -> QuorumCertificate .
+  eq GenerateQC(QCL,A1) = $GenerateQC(QCL,<< QCtype : highQC, QCview : 0, QCsign : A1 >>) .
+  eq $GenerateQC(
+    << QCtype : highQC, QCview : V2, QCsign : A2 >> :: QCL,
+    << QCtype : highQC, QCview : V1, QCsign : A1 >>)
+    = $GenerateQC(QCL,<< QCtype : highQC, QCview : max(V1,V2), QCsign : A1 >>) .
+  eq $GenerateQC(nilQCL,QC) = QC .
+  
+  --- GenerateBlock(qc for last view, cur view num), parent block should be qcview
+  op GenerateBlock : QuorumCertificate Nat -> Block .
+  eq GenerateBlock(<< QCtype : QCT, QCview : V1, QCsign : ADS >>,V) 
+    =  [[ Bparent : V1, Bview : V, Bqc : << QCtype : QCT, QCview : V1, QCsign : ADS >> ]] .
+
+  crl [primary-nextview] :
+    {T, nextView(<< QCtype : QCT, QCview : V2, QCsign : ADS1 >>, V1) from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2, newView : V1,
+      proposedBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (propose-n(A1,B) @ T)) >
+    if (not IsInBlockList(BL1,V1)) and (not IsQCExist(QCL1,<< QCtype : QCT, QCview : V2, QCsign : ADS1 >>)) then
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : nilQCL, recvVote : nilQCL, newView : 0,
+      proposedBlock : (BL1 :: B), recvBlock : DropBlock(BL2,V1), AS >
+    insertList({T | SL},propagate prepare(B) from A1 to ADS ^;^ A1 at T)
+    else
+      if IsQCExist(QCL1,<< QCtype : QCT, QCview : V2, QCsign : ADS1 >>) then
+      < A1 : Replica | nodeNum : N, nodeF : N1, 
+        nodeOther : ADS,
+        curView : V, recvNextView : UpdateQC(QCL1,<< QCtype : QCT, QCview : V2, QCsign : ADS1 >>), recvVote : QCL2, newView : V1,
+        proposedBlock : BL1, recvBlock : BL2, AS >
+      {T | SL}
+      else
+      < A1 : Replica | nodeNum : N, nodeF : N1, 
+        nodeOther : ADS,
+        curView : V, recvNextView : nilQCL, recvVote : QCL2, newView : V1,
+        proposedBlock : BL1, recvBlock : BL2, AS >
+      {T | SL}
+      fi
+    fi
+  if (len(QCL1) + 1) >= sd(N,N1) /\ B := GenerateBlock(CreateAggQC(QCL1 :: << QCtype : QCT, QCview : V2, QCsign : ADS1 >>,A1),V1) /\ V1 < VLIMIT 
+    /\ TPnotFault({T, (nextView(<< QCtype : QCT, QCview : V2, QCsign : ADS1 >>, V1) from A2 to A1)},TPAL,TPCTPL) .
+
+  op CreateAggQC : QuorumCertificateList Address -> QuorumCertificate .
+  op $CreateAggQC : QuorumCertificateList QuorumCertificate -> QuorumCertificate .
+  eq CreateAggQC(QCL,A1) = $CreateAggQC(QCL,<< QCtype : aggQC, QCview : 99999, QCsign : nullASF >>) .
+  eq $CreateAggQC(
+      << QCtype : aggQC, QCview : V2, QCsign : A2 >> :: QCL,
+      << QCtype : aggQC, QCview : V1, QCsign : ADS >>)
+    = $CreateAggQC(QCL,<< QCtype : aggQC, QCview : min(V1,V2), QCsign : (ADS ^;^ A2) >>) .
+  eq $CreateAggQC(nilQCL,QC) = QC .
+
+  --- DropBlock(BL,N): drop block of bview N from BL
+  op DropBlock : BlockList Nat -> BlockList .
+  ceq DropBlock([[Bparent : N, Bview : V, Bqc : QC]] :: BL, V1) = DropBlock(BL,V)  if V == V1 .
+  ceq DropBlock([[Bparent : N, Bview : V, Bqc : QC]] :: BL, V1) = 
+    [[Bparent : N, Bview : V, Bqc : QC]] :: DropBlock(BL,V1) 
+    if V =/= V1 .
+  eq DropBlock(nilBL,V) = nilBL .
+
+  --- ExtractBlock(BL,N): extract block of bview N from BL
+  op ExtractBlock : BlockList Nat -> BlockList .
+  ceq ExtractBlock([[Bparent : N, Bview : V, Bqc : QC]] :: BL, V1) = 
+    [[Bparent : N, Bview : V, Bqc : QC]] :: ExtractBlock(BL,V1)
+    if V == V1 .
+  ceq ExtractBlock([[Bparent : N, Bview : V, Bqc : QC]] :: BL, V1) = 
+    ExtractBlock(BL,V1) 
+    if V =/= V1 .
+  eq ExtractBlock(nilBL,V) = nilBL .
+
+  --- IsInBlockList(BL,V): check whether block view V is in BL
+  op IsInBlockList : BlockList Nat -> Bool .
+  eq IsInBlockList(BL :: [[Bview : V, AS]] :: BL2, V) = true .
+  eq IsInBlockList(BL,V) = false [owise] .
+
+  --- IsQCExist(QCL,QC): check whether QC is in QCL, only compare QCsign
+  op IsQCExist : QuorumCertificateList QuorumCertificate -> Bool .
+  ceq IsQCExist(QCL1 :: << QCtype : QCT1, QCview : V1, QCsign : ADS1 >> :: QCL2,<< QCtype : QCT2, QCview : V2, QCsign : ADS2 >>)
+    = true if ADS1 == ADS2 .
+  ceq IsQCExist(QCL1 :: << QCtype : QCT1, QCview : V1, QCsign : ADS1 >> :: QCL2,<< QCtype : QCT2, QCview : V2, QCsign : ADS2 >>)
+    = false if ADS1 =/= ADS2 .
+  eq IsQCExist(nilQCL,QC) = false [owise] .
+
+  --- UpdateQC(QCL,QC), update QC in QCL with same QCsign
+  op UpdateQC : QuorumCertificateList QuorumCertificate -> QuorumCertificateList .
+  ceq UpdateQC((QCL1 :: << QCtype : QCT1, QCview : V1, QCsign : ADS1 >> :: QCL2),<< QCtype : QCT2, QCview : V2, QCsign : ADS2 >>)
+    = QCL1 :: << QCtype : QCT2, QCview : V2, QCsign : ADS2 >> :: QCL2 if ADS1 == ADS2 .
+  eq UpdateQC(QCL,QC) = QCL [owise] .
+
+  --- next primary
+  crl [recv-vote] :
+    {T, vote(<< QCtype : QCT, QCview : V1, QCsign : ADS1 >>) from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, 
+      recvVote : (QCL2 :: << QCtype : QCT, QCview : V1, QCsign : ADS1 >>) ,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL} 
+  if V <= V1 
+    /\ TPnotFault({T, (vote(<< QCtype : QCT, QCview : V1, QCsign : ADS1 >>) from A2 to A1)},TPAL,TPCTPL) .
+
+  crl [recv-nextview] :
+    {T, nextView(<< QCtype : QCT, QCview : V, QCsign : ADS1 >>, V2) from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V1, recvNextView : QCL1, recvVote : QCL2, newView : V2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (recv-n(A1,V2) @ T)) >
+    if IsQCExist(QCL1,<< QCtype : QCT, QCview : V, QCsign : ADS1 >>) then
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V1, recvNextView : UpdateQC(QCL1,<< QCtype : QCT, QCview : V, QCsign : ADS1 >>), recvVote : QCL2, newView : V2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    else
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V1, 
+      recvNextView : (QCL1 :: << QCtype : QCT, QCview : V, QCsign : ADS1 >>), newView : V2,
+      recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    fi
+    {T | SL}
+  if (len(QCL1) + 1) < sd(N,N1) 
+    /\ TPnotFault({T, (nextView(<< QCtype : QCT, QCview : V, QCsign : ADS1 >>, V2) from A2 to A1)},TPAL,TPCTPL) .
+
+  crl [recv-nextview-new] :
+    {T, nextView(<< QCtype : QCT, QCview : V, QCsign : ADS1 >>, V2) from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V1, recvNextView : QCL1, recvVote : QCL2, newView : V3,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (recv-nn(A1,V2) @ T)) >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V1, recvNextView : << QCtype : QCT, QCview : V, QCsign : ADS1 >>, recvVote : QCL2, newView : V2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  if V2 > V3 
+    /\ TPnotFault({T, (nextView(<< QCtype : QCT, QCview : V, QCsign : ADS1 >>, V2) from A2 to A1)},TPAL,TPCTPL) .
+
+  --- clean old vote and nextview
+  ceq {T, vote(<< QCtype : QCT, QCview : V1, QCsign : ADS1 >>) from A2 to A1}
+    < A1 : Replica | curView : V, AS > = < A1 : Replica | curView : V, AS >
+  if V1 < V .
+  ceq {T, nextView(<< QCtype : QCT, QCview : V1, QCsign : ADS1 >>, N) from A2 to A1}
+    < A1 : Replica | curView : V, newView : V, AS > = < A1 : Replica | curView : V, newView : V, AS >
+  if N < V .
+  ceq recvVote : (QCL :: << QCtype : QCT1, QCview : V1, QCsign : ADS1 >> 
+      :: QCL1 :: << QCtype : QCT2, QCview : V2, QCsign : ADS2 >> :: QCL2)
+  = recvVote : (QCL :: QCL1 :: << QCtype : QCT2, QCview : V2, QCsign : ADS2 >> :: QCL2)
+  if V1 < V2 .
+  ceq recvNextView : (QCL :: << QCtype : QCT1, QCview : V1, QCsign : ADS1 >> 
+      :: QCL1 :: << QCtype : QCT2, QCview : V2, QCsign : ADS2 >> :: QCL2)
+  = recvNextView : (QCL :: QCL1 :: << QCtype : QCT2, QCview : V2, QCsign : ADS2 >> :: QCL2)
+  if (V1 + 2) < V2 .
+
+  --- normal replica
+  crl [recv-prepare-safe] :
+    {T, prepare(B) from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, tmoQC : QC1, tmoV : V1,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (recv-safe-b(A1,B) @ T)) >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, tmoQC : << QCtype : aggQC, QCview : getBview(B), QCsign : A1 >>, tmoV : (getBview(B) + 1),
+      curView : getBview(B), recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : 
+      if getBqctype(B) == highQC then (BL2 :: B) else (DropBlock(BL2,sd(getBview(B),1)) :: B) fi, 
+      AS >
+    insertList({T | SL},
+      delay-msg(vote(<< QCtype : highQC, QCview : getBview(B), QCsign : A1 >>) 
+        from A1 to getPrimary(getBview(B) + 1,N),T) ;
+      [T + TMOLIMIT,tmo(<< QCtype : aggQC, QCview : getBview(B), QCsign : A1 >>, (getBview(B) + 1)) from A1 to A1,0])
+  if IsSafeBlock(B) 
+    /\ TPnotFault({T, (prepare(B) from A2 to A1)},TPAL,TPCTPL) .
+
+  op IsSafeBlock : Block -> Bool .
+  eq IsSafeBlock([[ Bparent : V1, Bview : V, 
+    Bqc : << QCtype : highQC, QCview : V1, QCsign : ADS >> ]])
+    = (V == V1 + 1) .
+  eq IsSafeBlock([[ Bparent : V1, Bview : V, 
+    Bqc : << QCtype : aggQC, QCview : V2, QCsign : ADS >> ]])
+    = (V > V2) .
+  eq IsSafeBlock(B) = false [owise] .
+
+  crl [recv-prepare-not-safe] :
+    {T, prepare(B) from A2 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, tmoQC : QC, tmoV : V1,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, tmoQC : << QCtype : aggQC, QCview : V, QCsign : A1 >>, tmoV : (getBview(B) + 1),
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    insertList({T | SL},[T + TMOLIMIT,tmo(<< QCtype : aggQC, QCview : V, QCsign : A1 >>,(getBview(B) + 1)) from A1 to A1,0])
+  if not IsSafeBlock(B) 
+    /\ TPnotFault({T, (prepare(B) from A2 to A1)},TPAL,TPCTPL) .
+
+  crl [tmo-nextview] :
+    {T, tmo(<< QCtype : QCT, QCview : V, QCsign : A1 >>,V2) from A1 to A1}
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, tmoQC : << QCtype : QCT, QCview : V, QCsign : A1 >>, tmoV : V2,
+      curView : V3, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      TPevilSrc : TPAL, TPtemperContent : TPCTPL,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (send-n(A1,V2) @ T)) >
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS, tmoQC : << QCtype : aggQC, QCview : V, QCsign : A1 >>, tmoV : (V2 + 1),
+      curView : V3, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL1, recvBlock : BL2, AS >
+    insertList({T | SL},
+      delay-msg(nextView(<< QCtype : aggQC, QCview : V, QCsign : A1 >>,V2) from A1 to getPrimary(V2,N),T) ;
+      [T + TMOLIMIT, tmo(<< QCtype : aggQC, QCview : V, QCsign : A1 >>,(V2 + 1)) from A1 to A1,0]) 
+  if TPnotFault({T, (tmo(<< QCtype : QCT, QCview : V, QCsign : A1 >>,V2) from A1 to A1)},TPAL,TPCTPL) .
+
+  --- clean old tmo
+  ceq  {T, tmo(<< QCtype : QCT, QCview : V1, QCsign : A1 >>, N) from A1 to A1}
+    < A1 : Replica | 
+      tmoQC : << QCtype : QCT, QCview : V2, QCsign : A1 >>, tmoV : V, AS >
+  = < A1 : Replica | 
+      tmoQC : << QCtype : QCT, QCview : V2, QCsign : A1 >>, tmoV : V, AS >
+  if N =/= V or V1 =/= V2 .
+
+  crl [commit-block] :
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL, recvBlock : (BL1 :: B :: BL2 :: B1 :: BL3 :: B2 :: BL4), AS >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    {T | SL}
+  =>
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : (BL :: B), recvBlock : (BL1 :: BL2 :: B1 :: BL3 :: B2 :: BL4),
+      AS >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commit(A1,B) @ T)) >
+    {T | SL}
+  if IsCommitBlock(B,B1,B2) /\ IsInBlockList(BL,getBparent(B)).
+  --- check whether Bparent is committed
+
+  ceq eagerEnabled(< A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL, recvBlock : (BL1 :: B :: BL2 :: B1 :: BL3 :: B2 :: BL4), AS >)
+    = true if IsCommitBlock(B,B1,B2) /\ IsInBlockList(BL,getBparent(B)) .
+
+  crl [commit-block-p] :
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL, recvBlock : (BL1 :: B :: BL2 :: B1 :: BL3 :: B2 :: BL4), AS >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    {T | SL}
+  =>
+    < A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : (BL :: ExtractBlock(BL1,getBparent(B)) :: B),
+      recvBlock : (DropBlock(BL1,getBparent(B)) :: BL2 :: B1 :: BL3 :: B2 :: BL4),
+      AS >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commit-p(A1,B) @ T)) >
+    {T | SL}
+  if IsCommitBlock(B,B1,B2) /\ not IsInBlockList(BL,getBparent(B)) .
+  --- check whether Bparent is committed
+
+  ceq eagerEnabled(< A1 : Replica | nodeNum : N, nodeF : N1, 
+      nodeOther : ADS,
+      curView : V, recvNextView : QCL1, recvVote : QCL2,
+      commitBlock : BL, recvBlock : (BL1 :: B :: BL2 :: B1 :: BL3 :: B2 :: BL4), AS >)
+    = true if IsCommitBlock(B,B1,B2) /\ not IsInBlockList(BL,getBparent(B)) .
+
+  --- IsCommitBlock(grand, parent, son), true if grand can commit
+  op IsCommitBlock : Block Block Block -> Bool .
+  eq IsCommitBlock(B,B1,B2) = 
+    getBparent(B2) == getBview(B1)
+     and getBparent(B1) == getBview(B)
+     and getBview(B1) == getBview(B) + 1 .
+  eq IsCommitBlock(B,B1,B2) = false [owise] .
+
+
+endm
+

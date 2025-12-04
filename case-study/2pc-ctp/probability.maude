@@ -1,0 +1,28 @@
+---(
+probality
+2023.2.9 17:13
+)
+
+mod SAMPLER is
+  pr RANDOM .
+  pr COUNTER .
+  pr CONVERSION .
+  op e : -> Float .
+  eq e = 2.71828 .
+  op rand : -> [Float] .
+  rl rand => float(random(counter) / 4294967295) .
+endm
+
+mod PROBABILITY is
+  pr SAMPLER .
+
+  vars MEAN SD X : Float .
+  op normal : Float Float Float  -> Float .
+  eq normal(MEAN,SD,X) = 
+    (1.0 / (SD * sqrt(2.0 * pi))) * e ^ (- 0.5 * ((X - MEAN) / SD) ^ 2.0) .
+  op lognormal : Float Float Float  -> Float .
+  eq lognormal(MEAN,SD,X) =
+    (1.0 / (X * SD * sqrt(2.0 * pi))) * exp((log(X) - MEAN) ^ 2.0 / (- 2.0 * SD ^ 2.0)) .
+endm
+
+--- set rules clear off .

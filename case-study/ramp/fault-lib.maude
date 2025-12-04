@@ -1,0 +1,507 @@
+---(
+library for fault framework
+based on apmaude
+1. fault interface
+2. fault modules: msgloss, msgdup, partition, crush
+3. fault composite module
+4. fault trans for doing f-trans
+5. fault-lib module for be included by others
+2023.12.7
+)
+load apmaude
+load probability
+
+mod FAULT-INTERFACE is
+  inc APMAUDE .
+  pr PROBABILITY .
+  --- Fault Injector
+  op Evildoer : -> ActorType [ctor] .
+  op evildoer : -> Address [ctor] .
+  op Injector : -> ActorType [ctor] .
+  op injector : -> Address [ctor] .
+  sort FaultType .
+  ops nonFault ml md pa cr : -> FaultType [ctor] .
+  sort FaultList .
+  subsort FaultType < FaultList .
+  op nilFL : -> FaultList .
+  op _::_ : FaultList FaultList -> FaultList [assoc id: nilFL] .
+  sort FaultFlag .
+  subsort FaultFlag < Config .
+  op faultLicense : FaultType -> FaultFlag [ctor] .
+  op faultTrigger : -> FaultFlag [ctor] .
+  op faultUpdateMood : -> FaultFlag [ctor] .
+  op nonFF : -> FaultFlag [ctor] .
+
+  op faultFlag :_ : FaultFlag -> Attribute [ctor] .
+  op faultLog :_ : ScheduleList -> Attribute [ctor] .
+  op faultMsg :_ : Config -> Attribute [ctor] .
+  op faultRegi :_ : FaultList -> Attribute [ctor] .
+
+  op nonOid : -> Address .
+  op evildoerObj : -> Actor .
+  op injectorObj : -> Actor .
+
+  --- Bool List
+  sort BoolList .
+  subsort Bool < BoolList .
+  op nilBL : -> BoolList .
+  op _::_ : BoolList BoolList -> BoolList [assoc id: nilBL].
+
+  sort ContentList .
+  subsort Content < ContentList .
+  op nilCL : -> ContentList .
+  op _::_ : ContentList ContentList -> ContentList [assoc id: nilCL] .
+
+  --- debug
+  op debugFlagM : Float Float Float Float -> Content .
+  op debugFlagFT : FaultType -> Content .
+endm
+
+
+mod FAULT-MSGLOSS is
+  inc FAULT-INTERFACE .
+  op MLmood :_ : Float -> Attribute [ctor] .
+  op MLeatMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- rate for doing ml, set by initconf
+  op MLfaultRate :_ : Float -> Attribute [ctor] .
+  --- the contents in list may suffer from msg loss
+  op MLvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- the recvers in list may suffer from msg loss
+  op MLvulnerableAddress :_ : Addresses -> Attribute [ctor] .
+  --- a msg may lose if msgcont is in MLvulnerableContent *and* msg recv is in MLvulnerableAddress 
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R : Float .
+  var AC : ActorConfig . vars O O2 : Address .
+  var CO : Content . vars CL CL2 : ContentList .
+  vars OS OS2 : Addresses .
+  crl [msg-loss-execute] :
+    < injector : Injector | MLmood : M, MLfaultRate : R, 
+      MLeatMsg : SL2, MLvulnerableContent : CL, 
+      MLvulnerableAddress : OS,
+      faultMsg :{ T, (CO from O to O2) }, 
+      faultFlag : faultLicense(ml), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | MLmood : rand, MLfaultRate : R,
+      MLeatMsg : (SL2 ; [T,(CO from O to O2),0]), 
+      MLvulnerableContent : CL, MLvulnerableAddress : OS,
+      faultMsg : null, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and MLisVulnerable(CO,CL,O2,OS) .
+  crl [msg-loss-absolve] :
+    < injector : Injector | MLmood : M, MLfaultRate : R, 
+      MLeatMsg : SL2, MLvulnerableContent : CL, MLvulnerableAddress : OS,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultLicense(ml), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | MLmood : rand, MLfaultRate : R,
+      MLeatMsg : SL2, MLvulnerableContent : CL, MLvulnerableAddress : OS,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and not MLisVulnerable(CO,CL,O2,OS) .
+
+  --- MLnotFault(mood,faultRate) = mood > faultRate
+  op MLnotFault : Float Float -> Bool [ctor] .
+  ceq MLnotFault(M,R) = true if M > R .
+  eq MLnotFault(M,R) = false [owise] .
+
+  op MLisVulnerable : Content ContentList Address Addresses -> Bool .
+  eq MLisVulnerable(CO,CL,O,OS) 
+    = MLisVulnerableContent(CO,CL) and MLisVulnerableAddress(O,OS) .
+  op MLisVulnerableContent : Content ContentList -> Bool .
+  --- eq MLisVulnerableContent(CO,(CL :: CO :: CL2)) = true .
+  --- eq MLisVulnerableContent(CO,CL) = false [owise] .
+  op MLisVulnerableAddress : Address Addresses -> Bool .
+  eq MLisVulnerableAddress(O, (OS ; O ; OS2)) = true .
+  eq MLisVulnerableAddress(O,OS) = false [owise] .
+
+endm
+
+mod FAULT-MSGDUP is
+  inc FAULT-INTERFACE .
+  op MDmood :_ : Float -> Attribute [ctor] .
+  op MDdupMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- rate for doing md, set by initconf
+  op MDfaultRate :_ : Float -> Attribute [ctor] .
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R : Float .
+  var AC : ActorConfig .
+  crl [msg-dup] :
+    < injector : Injector | MDmood : M, MDfaultRate : R, 
+      MDdupMsg : SL2, faultMsg : { T, MSG }, 
+      faultFlag : faultLicense(md), AS >
+    AC {T | SL} faultTrigger
+    =>
+    < injector : Injector | MDmood : rand, MDfaultRate : R,
+      MDdupMsg : (SL2 ; [T,MSG,0]), faultMsg : { T, MSG }, 
+      faultFlag : faultUpdateMood, AS >
+    AC {T | insert(SL,delay-msg(MSG,T))} faultUpdateMood
+    if M <= R .
+  
+  --- MDnotFault(mood,faultRate) = mood > faultRate
+  op MDnotFault : Float Float -> Bool [ctor] .
+  ceq MDnotFault(M,R) = true if M > R .
+  eq MDnotFault(M,R) = false [owise] .
+endm
+
+mod FAULT-PARTITION is
+  inc FAULT-INTERFACE .
+  sort PAFaultStatus .
+  ops standby cutting recovered : -> PAFaultStatus [ctor] .
+  sort Partition .
+  ops _:|:_ : Addresses Addresses -> Partition [ctor] .
+
+  op PAstatus :_ : PAFaultStatus -> Attribute [ctor] .
+  op PAallActors :_ : Addresses -> Attribute [ctor] .
+  op PApart :_ : Partition -> Attribute [ctor] .
+  op PAcutMsg :_ : ScheduleList -> Attribute [ctor] .
+  op PAmood :_ : Float -> Attribute [ctor] .
+  --- rate for partition, set by initconf
+  op PApartRate :_ : Float -> Attribute [ctor] .
+  --- rate for recovery, set by initconf
+  op PArecoRate :_ : Float -> Attribute [ctor] .
+
+  vars SL SL2 : ScheduleList .
+  vars AS1 AS2 : AttributeSet . vars OS1 OS2 OS : Addresses .
+  vars O O1 O2 : Address . var MP : Content . var FS : PAFaultStatus .
+  vars T M R R2 : Float . var PA : Partition .
+  var AC : ActorConfig . var AM : ActiveMsg .
+  crl [make-part] :
+    < injector : Injector | PAstatus : standby, PAmood : M, PApartRate : R,
+        PApart : (nullAd :|: nullAd), PAallActors : OS, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : cutting, PAmood : rand, PApartRate : R,
+        PApart : devideAddresses(OS,0.9,(nullAd :|: nullAd)), 
+        PAallActors : OS, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M <= R .
+  crl [cut-part] :
+    < injector : Injector | PAstatus : cutting, PAmood : M, PArecoRate : R,
+        PApart : (OS1 :|: OS2), PAcutMsg : SL2,
+        faultMsg : {T, (MP from O2 to O1)}, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  => 
+    < injector : Injector | PAstatus : cutting, PAmood : rand, PArecoRate : R,
+        PApart : (OS1 :|: OS2), PAcutMsg : (SL2 ; [T,(MP from O2 to O1),0]),
+        faultMsg : null, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if isCut(O1,O2,OS1,OS2) /\ M > R .
+  crl [recover] :
+    < injector : Injector | PAstatus : cutting, PAmood : M, 
+      PArecoRate : R, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : recovered, PAmood : rand, 
+      PArecoRate : R, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M <= R .
+
+  --- devide Addresses to 2 non-empty Addresses
+  --- rew devideAddresses((server ; client(0) ; client(1) ; client(2)),0.9,(empty :|: empty)) .
+  op devideAddresses : Addresses Float Partition -> Partition .
+  ceq devideAddresses((O ; OS),R,(OS1 :|: OS2)) = devideAddresses(OS,rand,((O ; OS1) :|: OS2)) 
+      if R >= 0.5 [owise] .
+  ceq devideAddresses((O ; OS),R,(OS1 :|: OS2)) = devideAddresses(OS,rand,(OS1 :|: (O ; OS2)))
+      if R < 0.5 [owise] .
+  eq devideAddresses(O,R,(nullAd :|: OS2)) = devideAddresses(nullAd,rand,(O :|: OS2)) .
+  eq devideAddresses(O,R,(OS1 :|: nullAd)) = devideAddresses(nullAd,rand,(OS1 :|: O)) .
+  eq devideAddresses(nullAd,R,PA) = PA .
+
+  --- if (O1 in OS1 and O2 in OS2) or (O2 in OS1 and O1 in OS2), then true
+  op isCut : Address Address Addresses Addresses -> Bool [ctor] .
+  op isCutRec : Address Address Addresses Addresses -> Bool [ctor] .
+  --- eq isCut(O1,O2,OS1,OS2) = isCutRec(O1,O2,OS1,OS2) or isCutRec(O2,O1,OS1,OS2) .
+  --- eq isCutRec(O1,O2,(O1 ; OS1),(O2 ; OS2)) = true .
+  --- eq isCutRec(O1,O2,OS1,OS2) = false [owise] .
+  eq isCut(O1,O2,OS1,OS2) = 
+      (isInAddresses(O1,OS1) and isInAddresses(O2,OS2))
+      or (isInAddresses(O1,OS2) and isInAddresses(O2,OS1)) .
+  op isInAddresses : Address Addresses -> Bool [ctor] .
+  eq isInAddresses(O1, (O1 ; OS1)) = true .
+  eq isInAddresses(O1, nullAd) = false .
+  eq isInAddresses(O1, (O2 ; OS1)) = isInAddresses(O1,OS1) [owise] .
+
+  --- whether rules in target module can go on, not fault point
+  --- PAnotFault(PAFaultStatus, mood, partRate, recoRate, SrcOid, DstOid, partOS1, partOS2)
+  op PAnotFault : PAFaultStatus Float Float Float Address Address Addresses Addresses -> Bool [ctor] .
+  ceq PAnotFault(standby,M,R,R2,O1,O2,OS1,OS2) = true if M > R .
+  ceq PAnotFault(cutting,M,R,R2,O1,O2,OS1,OS2) = true if M > R2 and not isCut(O1,O2,OS1,OS2) .
+  eq PAnotFault(recovered,M,R,R2,O1,O2,OS1,OS2) = true .
+  eq PAnotFault(FS,M,R,R2,O1,O2,OS1,OS2) = false [owise] .
+endm
+
+mod FAULT-CRUSH is
+  inc FAULT-INTERFACE .
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  vars AS AS1 AS2 : AttributeSet . vars OS1 OS2 : Addresses .
+  vars O O1 O2 : Address . var MP : Content . var FS : CRFaultStatus .
+  vars T F M R R2 : Float . vars C C2 : Config . var AT : ActorType . 
+  var AC : ActorConfig . var AM : ActiveMsg . 
+  var CON : Content . vars CL1 CL2 : ContentList .
+
+  sort CRFaultStatus .
+  ops standby crushing rebooted : -> CRFaultStatus [ctor] .
+  op CRstatus :_ : CRFaultStatus -> Attribute [ctor] .
+
+  sort DictConfig .
+  op _=-=_ : Address Config -> DictConfig [ctor] .
+  op null : -> DictConfig .
+  op _;_ : DictConfig DictConfig -> DictConfig [assoc comm id: null] .
+  --- make Config to DictoryConfig
+  op CRmakeDictConfig : Config DictConfig -> DictConfig [ctor] .
+  var DC : DictConfig .
+  eq CRmakeDictConfig((< O : AT | AS > C),((O =-= C2) ; DC)) = 
+      CRmakeDictConfig(C,((O =-= (C2 < O : AT | AS >)) ; DC)) .
+  eq CRmakeDictConfig((< O : AT | AS > C),DC) = 
+      CRmakeDictConfig(C,((O =-= (< O : AT | AS >)) ; DC)) [owise] .
+  eq CRmakeDictConfig(({T, (MP from O2 to O)} C),((O =-= C2) ; DC)) = 
+      CRmakeDictConfig(C,((O =-= (C2 {T, (MP from O2 to O)})) ; DC)) .
+  eq CRmakeDictConfig(({T, (MP from O2 to O)} C),DC) = 
+      CRmakeDictConfig(C,((O =-= {T, (MP from O2 to O)}) ; DC)) [owise] .
+  eq CRmakeDictConfig(null,DC) = DC [owise] .
+
+  --- init state snap, for reboot
+  op CRinitStore :_ : DictConfig -> Attribute [ctor] .
+  --- vulnerable objs, which can crush
+  op CRvulnerableObjs :_ : Addresses -> Attribute [ctor] .
+  --- vulnerable content, may cause crush
+  op CRvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- current crushing obj
+  op CRcrushingObj :_ : Address -> Attribute [ctor] .
+  --- record last crushed obj
+  op CRcrushingObjRecord :_ : Address -> Attribute [ctor] .
+  --- msgs cut during crush
+  op CRcutMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- CR mood
+  op CRmood :_ : Float -> Attribute [ctor] .
+  --- rate for crush, set by initconf
+  op CRcrushRate :_ : Float -> Attribute [ctor] .
+  --- rate for reboot, set by initconf
+  op CRrebootRate :_ : Float -> Attribute [ctor] .
+
+  --- crush an obj
+  crl [make-crush] :
+    < injector : Injector | CRstatus : standby, CRmood : M, CRcrushRate : R,
+      CRvulnerableObjs : OS1, CRcrushingObj : O2, faultFlag : faultLicense(cr), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | CRstatus : crushing, CRmood : rand, CRcrushRate : R,
+      CRvulnerableObjs : OS1, CRcrushingObj : selectCrushObj(OS1,0.0,rand,null),
+      faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M <= R .
+  --- a crushing node can't recv msg, so cut
+  crl [cut-crush] :
+    < injector : Injector | CRstatus : crushing, CRmood : M, CRrebootRate : R,
+      CRcutMsg : SL2, CRcrushingObj : O1,
+      faultMsg : { T, (MP from O2 to O1)}, faultFlag : faultLicense(cr), AS1 >
+    AC {T | SL} faultTrigger
+  => 
+    < injector : Injector | CRstatus : crushing, CRmood : rand, CRrebootRate : R,
+      CRcutMsg : (SL2 ; [T,(MP from O2 to O1),0]), CRcrushingObj : O1,
+      faultMsg : null, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M > R .
+  crl [reboot] :
+    < injector : Injector | CRstatus : crushing, CRcrushingObj : O,
+      CRmood : M, CRrebootRate : R, CRcrushingObjRecord : O1,
+      CRinitStore : ((O =-= C) ; DC), faultMsg : { T, MSG },
+      faultFlag : faultLicense(cr), AS1 >
+    < O : AT | AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | CRstatus : rebooted, CRcrushingObj : null,
+      CRmood : rand, CRrebootRate : R, CRcrushingObjRecord : O,
+      CRinitStore : ((O =-= C) ; DC), faultMsg : rebootConfigMsg(C, T),
+      faultFlag : faultUpdateMood, AS1 >
+    AC rebootConfigActor(C) {T | insert(SL,delay-msg(MSG,T))} faultUpdateMood
+  if M <= R .
+
+  --- select crush Obj from vulnerableObjs
+  --- selectCrushObj(vulnerableObjs,highestScore,currentScore,crushObj)
+  op selectCrushObj : Addresses Float Float Address -> Address [ctor] .
+  ceq selectCrushObj((O ; OS1),R,R2,O2) = selectCrushObj(OS1,R2,rand,O)
+    if R2 > R [owise] .
+  ceq selectCrushObj((O ; OS1),R,R2,O2) = selectCrushObj(OS1,R,rand,O2)
+    if R2 <= R [owise] .
+  eq selectCrushObj(nullAd,R,R2,O2) = O2 .
+
+  --- reboot config with actor
+  op rebootConfigActor : Config -> Config .
+  eq rebootConfigActor(null) = null .
+  eq rebootConfigActor({F, MSG}) = null .
+  eq rebootConfigActor(AC C) = AC rebootConfigActor(C) [owise] .
+
+  --- reboot config with msg
+  op rebootConfigMsg : Config Float -> Config .
+  eq rebootConfigMsg(null, T) = null .
+  eq rebootConfigMsg({F, MSG}, T) = {T, MSG} .
+  eq rebootConfigMsg(AC C, T) = rebootConfigMsg(C,T) [owise] .
+
+  --- whether trigger crush fault
+  --- CRnotFault(FaultStatus, mood, crushRate, rebootRate, 
+  ---      crushAddress, DstAddress, curContent, vulnerableContentList)
+  op CRnotFault : CRFaultStatus Float Float Float Address Address Content ContentList -> Bool [ctor] .
+  ceq CRnotFault(standby,M,R,R2,O,O2,CON,CL1) = true if M > R or not CRisContentVulnerable(CON,CL1) .
+  ceq CRnotFault(crushing,M,R,R2,O,O2,CON,CL1) = true if M > R2 and O =/= O2 .
+  eq CRnotFault(rebooted,M,R,R2,O,O2,CON,CL1) = true .
+  eq CRnotFault(FS,M,R,R2,O,O2,CON,CL1) = false [owise] .
+
+  --- whether content is vulnerable
+  op CRisContentVulnerable : Content ContentList -> Bool [ctor] .
+  eq CRisContentVulnerable(CON, (CL1 :: CON :: CL2)) = true .
+  eq CRisContentVulnerable(CON,CL1) = false [owise] .
+
+endm
+
+mod FAULT-COMPOSITE is
+  inc FAULT-MSGLOSS .
+  inc FAULT-MSGDUP .
+  inc FAULT-PARTITION .
+  inc FAULT-CRUSH .
+  
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 T : Float .
+  var FL : FaultList . vars FT FT2 : FaultType .
+  var AS : AttributeSet .
+  var PAOS11 PAOS22 : Addresses . var PAFS : PAFaultStatus .
+  vars SL SL2 : ScheduleList . vars O1 O2 : Address . var MP : Content .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var AC : ActorConfig . var MSG : Msg . var AM : ActiveMsg .
+  crl [make-fault-license] :
+  < injector : Injector | 
+    MLmood : M1, MLfaultRate : R1, 
+    MDmood : M2, MDfaultRate : R2,
+    PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+      PApartRate : R31, PArecoRate : R32,
+    CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+      CRcrushRate : R41, CRrebootRate : R42,
+    faultLog : SL2,
+    faultRegi : FL,
+    faultMsg : null, 
+    faultFlag : nonFF, AS > 
+    {T, (MP from O2 to O1)} AC {T | SL}
+  =>
+  < injector : Injector | 
+    MLmood : M1, MLfaultRate : R1, 
+    MDmood : M2, MDfaultRate : R2,
+    PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+      PApartRate : R31, PArecoRate : R32,
+    CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid,  CRvulnerableContent : CRVCL,
+      CRcrushRate : R41, CRrebootRate : R42,
+    faultLog : (SL2 ; [T,(debugFlagM(M1,M2,M3,M4) to injector),0]),
+    faultRegi : FL,
+    faultMsg : {T, (MP from O2 to O1)}, 
+    faultFlag : genefaultLicense(
+      geneFaultList((nonFault :: FL),(false
+          :: (not MLnotFault(M1,R1)) 
+          :: (not MDnotFault(M2,R2)) 
+          :: (not PAnotFault(PAFS,M3,R31,R32,O1,O2,PAOS11,PAOS22))
+          :: (not CRnotFault(CRFS,M4,R41,R42,CrushOid,O1,MP,CRVCL))
+          )),0.0,rand,nonFault),
+    AS > 
+    AC {T | SL} faultTrigger
+  if false
+    or not MLnotFault(M1,R1)
+    or not MDnotFault(M2,R2)
+    or not PAnotFault(PAFS,M3,R31,R32,O1,O2,PAOS11,PAOS22) 
+    or not CRnotFault(CRFS,M4,R41,R42,CrushOid,O1,MP,CRVCL) 
+    or false .
+  rl [fault-update-mood] :
+    < injector : Injector | 
+      MLmood : M1, 
+      MDmood : M2, 
+      PAmood : M3, 
+      CRmood : M4,
+      faultMsg : {T, MSG}, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+      MLmood : 0.9999, 
+      MDmood : 0.9999,
+      PAmood : 0.9999, 
+      CRmood : 0.9999,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    {T, MSG} AC {T | SL} .
+  rl [fault-update-mood-2] :
+    < injector : Injector | 
+      MLmood : M1, 
+      MDmood : M2, 
+      PAmood : M3, 
+      CRmood : M4,
+      faultMsg : null, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+      MLmood : rand, 
+      MDmood : rand,
+      PAmood : rand, 
+      CRmood : rand,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    AC {T | SL} .
+
+  --- geneFaultList(FL,BL)
+  --- generate an FaultList, extract FL for according Bool in BL is true  
+  var BL : BoolList . var B : Bool .
+  op geneFaultList : FaultList BoolList -> FaultList [ctor] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = FT :: geneFaultList(FL,BL)
+    if B [owise] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = geneFaultList(FL,BL)
+    if not B [owise] .
+  eq geneFaultList(nilFL,nilBL) = nilFL .
+  --- generate faultLicense from FaultList, indicating FT be selected
+  --- genefaultLicense(FaultList,highestScore,currentScore,FaultType)
+  op genefaultLicense : FaultList Float Float FaultType -> FaultFlag [ctor] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R2,rand,FT)
+    if R2 > R1 [owise] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R1,rand,FT2)
+    if R2 <= R1 [owise] .
+  eq genefaultLicense(nilFL,R1,R2,FT) = faultLicense(FT) .
+endm
+
+mod FAULT-LIB is 
+  inc FAULT-COMPOSITE .
+endm
+
+mod FAULT-TRANS is 
+  inc FAULT-COMPOSITE .
+
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var MLVULCL : ContentList . var MLVULOS : Addresses .
+  var PAFS : PAFaultStatus . vars PAOS11 PAOS22 : Addresses .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+
+  crl [f-trans-ele]:
+    {TF, (CON from SRCO to DSTO)}
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      MDmood : M2, MDfaultRate : R2, 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+        PApartRate : R31, PArecoRate : R32,
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      MDmood : rand, MDfaultRate : R2,
+      PAmood : rand, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+        PApartRate : R31, PArecoRate : R32,
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    if 
+      MLnotFault(M1,R1)
+      /\ MDnotFault(M2,R2)
+      /\ PAnotFault(PAFS,M3,R31,R32,DSTO,SRCO,PAOS11,PAOS22)
+      /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,DSTO,CON,CRVCL) .
+endm

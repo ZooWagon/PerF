@@ -1,0 +1,20 @@
+load ../fault-lib
+
+mod FAULT-FHS-TP is
+  inc FAULT-LIB .
+  inc NAT .
+  
+  eq injectorObj =
+  < injector : Injector | 
+    TPevilSrc : 3,
+    TPtemperContent : (
+      [prepare([[Bparent : 2, Bview : 3, Bqc : << QCtype : highQC, QCview : 2, QCsign : 3 >>]]) 
+      | prepare([[Bparent : 1, Bview : 3, Bqc : << QCtype : highQC, QCview : 1, QCsign : 3 >>]])] ::
+      [prepare([[Bparent : 6, Bview : 7, Bqc : << QCtype : highQC, QCview : 6, QCsign : 3 >>]]) 
+      | prepare([[Bparent : 5, Bview : 7, Bqc : << QCtype : highQC, QCview : 5, QCsign : 3 >>]])]),
+    TPsufferedMsg : nil,
+    faultLog : nil,
+    faultRegi : (tp),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm

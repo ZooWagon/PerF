@@ -1,0 +1,17 @@
+load ../fault-lib
+load ../f-output/2pc-ctp
+
+mod FAULT-MD is
+  inc 2PC-CTP .
+  inc FAULT-LIB .
+  inc NAT .
+
+  eq faultRegister = md .
+
+  eq injectorObj =
+    < msgdup : Injector | MDfaultRate : 1.0, 
+      MDvulnerableRl : ('start-committing ^:^ 'start-aborting), 
+      MDvulnerableRecv : cohort(0), 
+      MDvulnerableSrc : coord, 
+      MDdupMsg : nilSL >  .
+endm

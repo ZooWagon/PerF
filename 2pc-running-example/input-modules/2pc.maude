@@ -1,0 +1,73 @@
+
+load ../apfmaude
+
+mod 2PC-INTERFACE is
+  inc APFMAUDE .
+
+  sorts Proposal Proposals .
+  ops p1 p2 : -> Proposal .
+  subsort Proposal < Proposals .
+  op nullp : -> Proposals [ctor] .
+  op _;_ : Proposals Proposals -> Proposals [assoc id: nullp] .
+  subsort Proposal < Content .
+
+  sorts MapPB MapPBs .
+  subsort MapPB < MapPBs .
+  op _|->_ : Proposal Bool -> MapPB .
+  op emptyPB : -> MapPBs [ctor] .
+  op _,_ : MapPBs MapPBs -> MapPBs [assoc comm id: emptyPB] .
+endm
+
+mod 2PC is inc 2PC-INTERFACE .
+
+  ops vote decision : Proposal Bool -> Content .
+  op start : -> Content .
+    
+  vars O O' : Oid .  vars OS OS' : OidSet .  var P : Proposal .  vars V V' : Bool .
+  vars PS PS' : Proposals . vars RS VS : MapPBs . var AS : AttributeSet .
+  var AC : ActorConfig . var CO : Content .
+  --- class Coord  | proposals : Proposals,   cohorts : OidSet, 
+  ---                waiting : OidSet, results : Map{Proposal,Bool} .
+  --- class Cohort | votes : Map{Proposal,Bool} .
+
+  op proposals:_ : Proposals -> Attribute .
+  op cohorts:_ : OidSet -> Attribute .
+  op waiting:_ : OidSet -> Attribute .
+  op results:_ : MapPBs -> Attribute .
+  op votes:_ : MapPBs -> Attribute .
+
+  ops Coord Cohort : -> ActorType .
+  op d : -> Float .
+
+  crl [start] : (start to O)
+                < O : Coord | proposals: (P ; PS), waiting: empty, 
+                  cohorts: OS, results: RS >
+            =>  < O : Coord | proposals: (P ; PS), waiting: OS, 
+                  cohorts: OS, results: (RS , (P |-> true)) >
+                    (propagate P from O to OS) 
+          if not exist(RS,P) .
+  op exist : MapPBs Proposal -> Bool .
+  eq exist((RS, (P |-> V)),P) = true .
+  eq exist(RS,P) = false [owise] .
+
+  eq (start to O) < O : Coord | proposals: nullp, AS >
+  = < O : Coord | proposals: nullp, AS > .
+
+  rl [vote] : (P from O' to O)  < O : Cohort | votes: (VS , (P |-> V)) >
+            =>    < O : Cohort | votes: (VS , (P |-> V)) >  (vote(P,V) from O to O') .
+
+  rl [collect] : (vote(P,V') from O' to O)
+                < O : Coord | waiting: (O' OS), results: (RS, P |-> V), AS >
+      =>   < O : Coord | waiting: OS, results: (RS, P |-> (V and V')), AS > .
+
+  rl [decision] : < O : Coord | proposals: (P ; PS), waiting: empty, 
+                                cohorts: OS, results: (RS, P |-> V) >
+            =>  < O : Coord | proposals: PS, waiting: empty, 
+                                cohorts: OS, results: (RS, P |-> V) >  
+            (start to O) (propagate decision(P,V) from O to OS) . 
+
+  rl [log] : (decision(P,V) from O' to O)  
+             < O : Cohort | votes: (VS, P |-> V') >
+            =>  < O : Cohort | votes: (VS, P |-> V) > .
+
+endm

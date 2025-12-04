@@ -1,0 +1,216 @@
+---(
+2PC-origin
+quantitative deterministic model, apmaude scheduler
+2024.3.13
+)
+load ../apmaude
+load ../sampler
+
+mod INTERFACE-2PC is
+  inc APMAUDE .
+  pr NAT .
+  inc SAMPLER .
+
+  sorts TxnState TxnStates .
+  subsort TxnState < TxnStates .
+  op nullTS : -> TxnState .
+  op _;_ : TxnStates TxnStates -> TxnStates [assoc id: nullTS] .
+  
+  --- Nat: txn id.
+  ops Preparing Committing Committed Aborting Aborted : Nat -> TxnState [ctor] .
+  op txnStateRecord :_ : TxnStates -> Attribute [ctor] .
+
+  op TriggerTxn : -> Content [ctor] .
+  ops Prepare Commit Abort PreYes PreNo Ack : Nat -> Content [ctor] .
+
+  op TimeoutValue : -> Float .
+  eq TimeoutValue = 5.0 .
+
+  op txnTerminal : -> Nat .
+  eq txnTerminal = 10 .
+
+  op cohortYesRate : -> Float .
+  eq cohortYesRate = 0.9 .
+
+  op d : -> Float .  --- message delay
+  eq d = sampleLogNormal(0.0, 1.0) .
+
+  eq pd = sampleLogNormal(0.0, 1.0) .
+  eq LIMIT = 200.0 .
+endm
+
+mod COORDINATOR is 
+  pr INTERFACE-2PC .
+  op Coord : -> ActorType [ctor] .
+  op coord : -> Address [ctor] .
+
+  op txnIdIter :_ : Nat -> Attribute [ctor] .
+  op cohorts :_ : AddressList -> Attribute [ctor] .
+
+  sorts TxnReply TxnReplies .
+  op _--_ : Address Content -> TxnReply .
+  subsort TxnReply < TxnReplies .
+  op nullTR : -> TxnReply .
+  op _;_ : TxnReplies TxnReplies -> TxnReplies [assoc id: nullTR] .
+  op txnReplyRecord :_ : TxnReplies -> Attribute [ctor] .
+
+  vars O O2 : Address . vars AL AL2 : AddressList .
+  var AS AS2 : AttributeSet .
+  vars TID N N2 : Nat . var T : Float .
+  var AC : ActorConfig .
+  var SL : ScheduleList .
+  var TS : TxnStates . vars TR TR2 : TxnReplies .
+  --- start a new txn, send prepare
+  crl [prepare] : 
+    {T, (TriggerTxn from O to O)}
+    < O : Coord | txnIdIter : TID, cohorts : AL, txnStateRecord : TS, AS > 
+  => 
+    < O : Coord | txnIdIter : TID, cohorts : AL, 
+      txnStateRecord : (TS ; Preparing(TID)), AS >
+    propagate Prepare(TID) from O to AL 
+  if TID < txnTerminal .
+  crl [prepare-terminate] : 
+    {T, (TriggerTxn from O to O)}
+    < O : Coord | txnIdIter : TID, cohorts : AL, txnStateRecord : TS, AS > 
+  => 
+    < O : Coord | txnIdIter : TID, cohorts : AL, 
+      txnStateRecord : (TS ; Preparing(TID)), AS >
+  if TID >= txnTerminal .
+  --- count a yes vote 
+  rl [recv-yes] : 
+    {T, (PreYes(TID) from O2 to O)}
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, AS >
+  => 
+    < O : Coord | txnIdIter : TID, txnReplyRecord : (TR ; O2 -- PreYes(TID)), AS > .
+  --- rollback if no is received
+  rl [recv-no] : 
+    {T, (PreNo(TID) from O2 to O)}
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, AS >
+  => 
+    < O : Coord | txnIdIter : TID, txnReplyRecord : (TR ; O2 -- PreNo(TID)), AS > .
+
+  crl [start-committing] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing(TID)), AS >
+  =>
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committing(TID)), AS >
+    propagate Commit(TID) from O to AL 
+  if isAllReply(TR,TID,AL) and canCommit(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing(TID)), AS > AC) = true 
+  if isAllReply(TR,TID,AL) and canCommit(TR,TID,AL) .
+
+  crl [start-aborting] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing(TID)), AS >
+  =>
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborting(TID)), AS >
+    propagate Abort(TID) from O to AL 
+  if isAllReply(TR,TID,AL) and not canCommit(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing(TID)), AS > AC) = true 
+  if isAllReply(TR,TID,AL) and not canCommit(TR,TID,AL) .
+
+  op canCommit : TxnReplies Nat AddressList -> Bool .
+  eq canCommit((TR ; (O -- PreYes(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    canCommit((TR ; TR2),TID,(AL ; AL2)) [owise] .
+  eq canCommit(TR,TID,nilAL) = true .
+  eq canCommit((TR ; (O -- PreNo(TID)) ; TR2),TID,(AL ; O ; AL2)) = false .
+
+  op isAllReply : TxnReplies Nat AddressList -> Bool .
+  eq isAllReply((TR ; (O -- PreYes(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    isAllReply((TR ; TR2),TID,(AL ; AL2)) .
+  eq isAllReply((TR ; (O -- PreNo(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    isAllReply((TR ; TR2),TID,(AL ; AL2)) .
+  eq isAllReply(TR,TID,nilAL) = true .
+  eq isAllReply(TR,TID,AL) = false [owise] .
+
+  rl [recv-ack] : 
+    {T, (Ack(TID) from O2 to O)}
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, AS >
+  => 
+    < O : Coord | txnIdIter : TID, txnReplyRecord : (TR ; O2 -- Ack(TID)), AS > .
+  
+  crl [commit] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committing(TID)), AS >
+  =>
+    < O : Coord | txnIdIter : (TID + 1), txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committed(TID)), AS >
+    [0.0, (TriggerTxn from O to O)]
+  if isAllAck(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committing(TID)), AS > AC) = true 
+  if isAllAck(TR,TID,AL) .
+
+  crl [abort] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborting(TID)), AS >
+  =>
+    < O : Coord | txnIdIter : (TID + 1), txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborted(TID)), AS >
+    [0.0, (TriggerTxn from O to O)]
+  if isAllAck(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborting(TID)), AS > AC) = true
+  if isAllAck(TR,TID,AL) .
+  
+  op isAllAck : TxnReplies Nat AddressList -> Bool .
+  eq isAllAck((TR ; (O -- Ack(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    isAllAck((TR ; TR2),TID,(AL ; AL2)) .
+  eq isAllAck(TR,TID,nilAL) = true .
+  eq isAllAck(TR,TID,AL) = false [owise] .
+endm
+
+mod COHORT is
+  pr INTERFACE-2PC .
+  op Cohort : -> ActorType [ctor] .
+  op cohort : Nat -> Address [ctor] .
+
+  --- op mood :_ : Float -> Attribute .
+
+  vars O O2 : Address . vars AL AL2 : AddressList .
+  var AS AS2 : AttributeSet .
+  vars N N2 : Nat . vars T M : Float .
+  var AC : ActorConfig .
+  var SL : ScheduleList .
+  var TS : TxnStates .
+  --- either vote yes or no
+  rl [reply] : 
+    {T, (Prepare(N) from O2 to O)}
+    < O : Cohort | txnStateRecord : TS, AS >
+   => 
+    < O : Cohort | txnStateRecord : (TS ; Preparing(N)), AS >
+    if rand <= cohortYesRate then 
+      [d, PreYes(N) from O to O2]
+    else 
+      [d, PreNo(N) from O to O2]
+    fi .
+  
+  rl [ack-commit] : 
+    {T, (Commit(N) from O2 to O)} 
+    < O : Cohort | txnStateRecord : (TS ; Preparing(N)), AS >
+  => 
+    < O : Cohort | txnStateRecord : (TS ; Committed(N)), AS >
+    [d, Ack(N) from O to O2] .
+  rl [ack-abort] : 
+    {T, (Abort(N) from O2 to O)} 
+    < O : Cohort | txnStateRecord : (TS ; Preparing(N)), AS >
+  => 
+    < O : Cohort | txnStateRecord : (TS ; Aborted(N)), AS >
+    [d, Ack(N) from O to O2] .
+
+endm
+
+mod 2PC is
+  pr COHORT .
+  pr COORDINATOR .
+endm
+
+set clear rules off .

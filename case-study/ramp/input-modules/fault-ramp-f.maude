@@ -1,0 +1,29 @@
+load ../fault-lib
+
+mod FAULT-RAMP-F is
+  inc FAULT-LIB .
+  inc NAT .
+
+  op MLTS : -> Timestamp . 
+  op MLDC : -> Address .
+  var MLN : Nat .
+  op geneVulCont : Nat -> ContentList [ctor] .
+  eq geneVulCont(s MLN) = commit(1 . 1 . (s s MLN), MLTS, MLDC, 1 . 1) :: geneVulCont(MLN) .
+  eq geneVulCont(0) = nilCL .
+
+  var CO : Content . vars CL CL2 : ContentList .
+  vars MLTSV MLTSV2 : Timestamp . vars MLDCV MLDCV2 MLADD : Address .
+  eq MLisVulnerableContent(commit(MLADD,MLTSV,MLDCV,1 . 1),(CL :: commit(MLADD,MLTSV2,MLDCV2,1 . 1) :: CL2)) = true .
+  eq MLisVulnerableContent(CO,CL) = false [owise] .
+  
+  eq injectorObj =
+  < injector : Injector | 
+    MLmood : 0.999, MLfaultRate : 0.50,
+    MLeatMsg : nil, 
+    MLvulnerableContent : geneVulCont(100),
+    MLvulnerableAddress : 2,
+    faultLog : nil,
+    faultRegi : (ml),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm

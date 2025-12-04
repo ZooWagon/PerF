@@ -1,0 +1,1 @@
+python tool/do_run.py $@

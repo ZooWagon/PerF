@@ -1,0 +1,23 @@
+load ../fault-lib
+
+mod FAULT-FHS is
+  inc FAULT-LIB .
+  inc NAT .
+  
+  eq injectorObj =
+  < injector : Injector | 
+    PAstatus : standby, PAoccurTime : 30.0, PAdurationTime : 15.0,
+    PAmood : rand, PAcutMsg : nil, PAallActors : (0 ^:^ 1 ^:^ 2 ^:^ 3),
+    PApart : (0 ^:^ 1 :|: 2 ^:^ 3),
+    ECevilSrc : 3,
+    ECequivocateContent : (
+      [prepare([[Bparent : 2, Bview : 3, Bqc : << QCtype : highQC, QCview : 2, QCsign : 3 >>]]) 
+      | prepare([[Bparent : 1, Bview : 3, Bqc : << QCtype : highQC, QCview : 1, QCsign : 3 >>]]) ,2] ::
+      [prepare([[Bparent : 6, Bview : 7, Bqc : << QCtype : highQC, QCview : 6, QCsign : 3 >>]]) 
+      | prepare([[Bparent : 5, Bview : 7, Bqc : << QCtype : highQC, QCview : 5, QCsign : 3 >>]]) ,2]),
+    ECsufferedMsg : nil,
+    faultLog : nil,
+    faultRegi : (pa :: ec),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm

@@ -1,0 +1,937 @@
+load ../fault-lib
+
+mod FAULT-CRUSH is
+  inc FAULT-INTERFACE .
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  vars AS AS1 AS2 : AttributeSet . vars OS1 OS2 : Addresses .
+  vars O O1 O2 : Address . var MP : Content . var FS : CRFaultStatus .
+  vars T F M R R2 : Float . vars C C2 : Config . var AT : ActorType . 
+  var AC : ActorConfig . var AM : ActiveMsg . 
+  var CON : Content . vars CL1 CL2 : ContentList .
+
+  sort CRFaultStatus .
+  ops standby crushing rebooted : -> CRFaultStatus [ctor] .
+  op CRstatus :_ : CRFaultStatus -> Attribute [ctor] .
+
+  sort DictConfig .
+  op _=-=_ : Address Config -> DictConfig [ctor] .
+  op null : -> DictConfig .
+  op _;_ : DictConfig DictConfig -> DictConfig [assoc comm id: null] .
+  --- make Config to DictoryConfig
+  op CRmakeDictConfig : Config DictConfig -> DictConfig [ctor] .
+  var DC : DictConfig .
+  eq CRmakeDictConfig((< O : AT | AS > C),((O =-= C2) ; DC)) = 
+      CRmakeDictConfig(C,((O =-= (C2 < O : AT | AS >)) ; DC)) .
+  eq CRmakeDictConfig((< O : AT | AS > C),DC) = 
+      CRmakeDictConfig(C,((O =-= (< O : AT | AS >)) ; DC)) [owise] .
+  eq CRmakeDictConfig(({T, (MP from O2 to O)} C),((O =-= C2) ; DC)) = 
+      CRmakeDictConfig(C,((O =-= (C2 {T, (MP from O2 to O)})) ; DC)) .
+  eq CRmakeDictConfig(({T, (MP from O2 to O)} C),DC) = 
+      CRmakeDictConfig(C,((O =-= {T, (MP from O2 to O)}) ; DC)) [owise] .
+  eq CRmakeDictConfig(null,DC) = DC [owise] .
+
+  --- init state snap, for reboot
+  op CRinitStore :_ : DictConfig -> Attribute [ctor] .
+  --- vulnerable objs, which can crush
+  op CRvulnerableObjs :_ : Addresses -> Attribute [ctor] .
+  --- vulnerable content, may cause crush
+  op CRvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- current crushing obj
+  op CRcrushingObj :_ : Address -> Attribute [ctor] .
+  --- record last crushed obj
+  op CRcrushingObjRecord :_ : Address -> Attribute [ctor] .
+  --- msgs cut during crush
+  op CRcutMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- CR mood
+  op CRmood :_ : Float -> Attribute [ctor] .
+  --- rate for crush, set by initconf
+  op CRcrushRate :_ : Float -> Attribute [ctor] .
+  --- rate for reboot, set by initconf
+  op CRrebootRate :_ : Float -> Attribute [ctor] .
+
+  --- crush an obj
+  crl [make-crush] :
+    < injector : Injector | CRstatus : standby, CRmood : M, CRcrushRate : R,
+      CRvulnerableObjs : OS1, CRcrushingObj : O2, faultFlag : faultLicense(cr), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | CRstatus : crushing, CRmood : rand, CRcrushRate : R,
+      CRvulnerableObjs : OS1, CRcrushingObj : selectCrushObj(OS1,0.0,rand,null),
+      faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M <= R .
+  --- a crushing node can't recv msg, so cut
+  crl [cut-crush] :
+    < injector : Injector | CRstatus : crushing, CRmood : M, CRrebootRate : R,
+      CRcutMsg : SL2, CRcrushingObj : O1,
+      faultMsg : { T, (MP from O2 to O1)}, faultFlag : faultLicense(cr), AS1 >
+    AC {T | SL} faultTrigger
+  => 
+    < injector : Injector | CRstatus : crushing, CRmood : rand, CRrebootRate : R,
+      CRcutMsg : (SL2 ; [T,(MP from O2 to O1),0]), CRcrushingObj : O1,
+      faultMsg : null, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M > R .
+  crl [reboot] :
+    < injector : Injector | CRstatus : crushing, CRcrushingObj : O,
+      CRmood : M, CRrebootRate : R, CRcrushingObjRecord : O1,
+      CRinitStore : ((O =-= C) ; DC), faultMsg : { T, MSG },
+      faultFlag : faultLicense(cr), AS1 >
+    < O : AT | AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | CRstatus : rebooted, CRcrushingObj : null,
+      CRmood : rand, CRrebootRate : R, CRcrushingObjRecord : O,
+      CRinitStore : ((O =-= C) ; DC), faultMsg : rebootConfigMsg(C, T),
+      faultFlag : faultUpdateMood, AS1 >
+    AC rebootConfigActor(C) {T | insert(SL,delay-msg(MSG,T))} faultUpdateMood
+  if M <= R .
+
+  --- select crush Obj from vulnerableObjs
+  --- selectCrushObj(vulnerableObjs,highestScore,currentScore,crushObj)
+  op selectCrushObj : Addresses Float Float Address -> Address [ctor] .
+  ceq selectCrushObj((O ; OS1),R,R2,O2) = selectCrushObj(OS1,R2,rand,O)
+    if R2 > R [owise] .
+  ceq selectCrushObj((O ; OS1),R,R2,O2) = selectCrushObj(OS1,R,rand,O2)
+    if R2 <= R [owise] .
+  eq selectCrushObj(nullAd,R,R2,O2) = O2 .
+
+  --- reboot config with actor
+  op rebootConfigActor : Config -> Config .
+  eq rebootConfigActor(null) = null .
+  eq rebootConfigActor({F, MSG}) = null .
+  eq rebootConfigActor(AC C) = AC rebootConfigActor(C) [owise] .
+
+  --- reboot config with msg
+  op rebootConfigMsg : Config Float -> Config .
+  eq rebootConfigMsg(null, T) = null .
+  eq rebootConfigMsg({F, MSG}, T) = {T, MSG} .
+  eq rebootConfigMsg(AC C, T) = rebootConfigMsg(C,T) [owise] .
+
+  --- whether trigger crush fault
+  --- CRnotFault(FaultStatus, mood, crushRate, rebootRate, 
+  ---      crushAddress, DstAddress, curContent, vulnerableContentList)
+  op CRnotFault : CRFaultStatus Float Float Float Address Address Content ContentList -> Bool [ctor] .
+  ceq CRnotFault(standby,M,R,R2,O,O2,CON,CL1) = true if M > R or not CRisContentVulnerable(CON,CL1) .
+  ceq CRnotFault(crushing,M,R,R2,O,O2,CON,CL1) = true if M > R2 and O =/= O2 .
+  eq CRnotFault(rebooted,M,R,R2,O,O2,CON,CL1) = true .
+  eq CRnotFault(FS,M,R,R2,O,O2,CON,CL1) = false [owise] .
+
+  --- whether content is vulnerable
+  op CRisContentVulnerable : Content ContentList -> Bool [ctor] .
+  eq CRisContentVulnerable(CON, (CL1 :: CON :: CL2)) = true .
+  eq CRisContentVulnerable(CON,CL1) = false [owise] .
+
+endm
+
+mod FAULT-COMPOSITE is
+  inc FAULT-CRUSH .
+  
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 T : Float .
+  var FL : FaultList . vars FT FT2 : FaultType .
+  var AS : AttributeSet .
+  ---   var PAOS11 PAOS22 : Addresses . var PAFS : PAFaultStatus .
+  vars SL SL2 : ScheduleList . vars O1 O2 : Address . var MP : Content .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var AC : ActorConfig . var MSG : Msg . var AM : ActiveMsg .
+  crl [make-fault-license] :
+  < injector : Injector | 
+  ---     MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+  ---     PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+  ---       PApartRate : R31, PArecoRate : R32,
+    CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+      CRcrushRate : R41, CRrebootRate : R42,
+    faultLog : SL2,
+    faultRegi : FL,
+    faultMsg : null, 
+    faultFlag : nonFF, AS > 
+    {T, (MP from O2 to O1)} AC {T | SL}
+  =>
+  < injector : Injector | 
+  ---     MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+  ---     PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+  ---       PApartRate : R31, PArecoRate : R32,
+    CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid,  CRvulnerableContent : CRVCL,
+      CRcrushRate : R41, CRrebootRate : R42,
+    faultLog : (SL2 ; [T,(debugFlagM(0.0,0.0,0.0,M4) to injector),0]),
+    faultRegi : FL,
+    faultMsg : {T, (MP from O2 to O1)}, 
+    faultFlag : genefaultLicense(
+      geneFaultList((nonFault :: FL),(false
+  ---           :: (not MLnotFault(M1,R1)) 
+  ---           :: (not MDnotFault(M2,R2)) 
+  ---           :: (not PAnotFault(PAFS,M3,R31,R32,O1,O2,PAOS11,PAOS22))
+          :: (not CRnotFault(CRFS,M4,R41,R42,CrushOid,O1,MP,CRVCL))
+          )),0.0,rand,nonFault),
+    AS > 
+    AC {T | SL} faultTrigger
+  if false
+  ---     or not MLnotFault(M1,R1)
+  ---     or not MDnotFault(M2,R2)
+  ---     or not PAnotFault(PAFS,M3,R31,R32,O1,O2,PAOS11,PAOS22) 
+    or not CRnotFault(CRFS,M4,R41,R42,CrushOid,O1,MP,CRVCL) 
+    or false .
+  rl [fault-update-mood] :
+    < injector : Injector | 
+  ---       MLmood : M1, 
+  ---       MDmood : M2, 
+  ---       PAmood : M3, 
+      CRmood : M4,
+      faultMsg : {T, MSG}, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+  ---       MLmood : 0.99, 
+  ---       MDmood : 0.99,
+  ---       PAmood : 0.99, 
+      CRmood : 0.99,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    {T, MSG} AC {T | SL} .
+  rl [fault-update-mood-2] :
+    < injector : Injector | 
+  ---       MLmood : M1, 
+  ---       MDmood : M2, 
+  ---       PAmood : M3, 
+      CRmood : M4,
+      faultMsg : null, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+  ---       MLmood : rand, 
+  ---       MDmood : rand,
+  ---       PAmood : rand, 
+      CRmood : rand,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    AC {T | SL} .
+
+  --- geneFaultList(FL,BL)
+  --- generate an FaultList, extract FL for according Bool in BL is true  
+  var BL : BoolList . var B : Bool .
+  op geneFaultList : FaultList BoolList -> FaultList [ctor] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = FT :: geneFaultList(FL,BL)
+    if B [owise] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = geneFaultList(FL,BL)
+    if not B [owise] .
+  eq geneFaultList(nilFL,nilBL) = nilFL .
+  --- generate faultLicense from FaultList, indicating FT be selected
+  --- genefaultLicense(FaultList,highestScore,currentScore,FaultType)
+  op genefaultLicense : FaultList Float Float FaultType -> FaultFlag [ctor] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R2,rand,FT)
+    if R2 > R1 [owise] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R1,rand,FT2)
+    if R2 <= R1 [owise] .
+  eq genefaultLicense(nilFL,R1,R2,FT) = faultLicense(FT) .
+endm
+
+--- Raft, New Leader Election
+--- 2023.10.18 15:26
+load ../apmaude
+mod LEDGER is 
+  --- index, term, and command form an entry
+  --- list of entries form a ledger
+  pr STRING .
+  pr NAT .
+  pr BOOL .
+  sorts Command Entry Ledger .
+  subsort String < Command .
+  subsort Entry < Ledger .
+  op entry : Nat Nat Command -> Entry [ctor] .
+  op empty : -> Ledger [ctor] .
+  op _;_ : Ledger Ledger -> Ledger [ctor assoc id: empty] .
+  --- indexing 
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  vars L1 L2 : Ledger .
+  vars ind ter : Nat .
+  var C : Command .
+
+  ---unused
+  op _`[_`] : Ledger Nat -> Entry .
+  eq (L1 ; entry(ind, ter, C) ; L2) [ind] = entry(ind, ter, C) .
+
+  --- check ledger contains entry 
+  var E E1 E2 : Entry .
+  op contains : Ledger Entry -> Bool .
+  eq contains(L1 ; E ; L2, E) = true .
+  eq contains(L1, E) = false [owise] .
+
+  --- get top of ledger
+  op head : Ledger -> Entry .
+  eq head(L1 ; E) = E .
+
+  --- helpers
+  op index : Entry -> Nat .
+  op term : Entry -> Nat .
+  op command : Entry -> Command .
+  eq index(entry(ind, ter, C)) = ind .
+  eq term(entry(ind, ter, C)) = ter .
+  eq command(entry(ind, ter, C)) = C .
+
+  --- check if E1 <= E2, so E2 is at least as up to date as E1 
+  op compare-log : Entry Entry -> Bool .
+  eq compare-log(E1, E2) = term(E1) < term(E2) or (term(E1) == term(E2) and index(E1) <= index(E2)) . 
+endm 
+
+mod MESSAGE is 
+  inc APMAUDE .
+  pr LEDGER .
+  pr NAT .
+  pr BOOL .
+  --- for leader
+  op Query : Command -> Content [ctor] .
+  --- the nat of the next three commands is the current term
+  --- send the ledger to followers 
+  op SetLog : Nat Ledger -> Content [ctor] .
+  --- vote yes if log updated, no otherwise (if node is down or setlog came from dead leader)
+  op SetLogResponse : Nat Bool -> Content [ctor] .
+  --- tell nodes to commit up to the designated entry (if entry doesn't exist, do nothing)
+  op Commit : Nat Entry -> Content [ctor] .
+  --- announce that become leader for specified term 
+  op BecomeLeader : Nat Address -> Content [ctor] .
+  --- request a vote from a node, giving the term and ledger of the candidate
+  op RequestVote : Nat Entry -> Content [ctor] .
+  --- if the logs have latest entries with different terms, the higher term is more up-to-date.
+  --- otherwise, the higher index is more up-to-date
+  --- Vote yes (true) if candidate is at least as up-to-date and not offline, no otherwise
+  op Vote : Nat Bool -> Content [ctor] .
+  --- check whether heartbeat timeout
+  op CheckHeartbeat : Nat -> Content [ctor] .
+  --- for client
+  op cmd : Nat -> Command [ctor] .
+
+  op dest : Msg -> Address .
+  op cont : Msg -> Content .
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var C : Content .
+  vars O O2 : Address .
+  eq dest(C from O to O2) = O2 .
+  eq cont(C from O to O2) = C .
+endm
+
+
+mod NODE is
+  pr MESSAGE .
+  pr STRING .
+  pr NAT .
+  pr LEDGER .
+  pr BOOL .
+
+  op node : Nat -> Address [ctor] .
+  op FollowerNode : -> ActorType .
+  op LeaderNode : -> ActorType .
+  op CandidateNode : -> ActorType .
+  op Client : -> ActorType [ctor] .
+  op client : -> Address [ctor] .
+
+  --- term of node. starts at 0. 1 term corresponds to 1 election 
+  op currentTerm :_ : Nat -> Attribute [ctor gather(&)] .
+  --- current ledger 
+  op log :_ : Ledger -> Attribute [ctor gather(&)] .
+  --- committed commands (relfected on state machine)
+  op committed :_ : Ledger -> Attribute [ctor gather(&)] .
+  --- other nodes 
+  op neighbors :_ : Addresses -> Attribute [ctor gather(&)] .
+  --- whether leader is waiting for nodes setlog
+  op waiting :_ : Bool -> Attribute [ctor gather(&)] .
+  --- value for majority of nodes 
+  op majority :_ : Nat -> Attribute [ctor gather(&)] .
+  --- number of neighbors (static)
+  op number-neighbors :_ : Nat -> Attribute [ctor gather(&)] .
+  --- number of yes response (election or commit)
+  op number-yes :_ : Nat -> Attribute [ctor gather(&)] .
+  --- number of no responses
+  op number-response :_ : Nat -> Attribute [ctor gather(&)] .
+  --- last time contact with leader
+  op heartbeat :_ : Float -> Attribute [ctor gather(&)] .
+  --- no heartbeat timeout
+  op heartbeat-timeout :_ : Float -> Attribute [ctor gather(&)] .
+
+  op to-nat : Bool -> Nat .
+  eq to-nat(false) = 0 .
+  eq to-nat(true) = 1 .
+
+  --- cleanup for each object
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var O : Address .
+  var C : ActorType .
+  var N : Nat .
+  var M : Msg .
+  var MC : Content .
+  var AS : AttributeSet .
+  var led : Ledger .
+  var E : Entry .
+  var B : Bool .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- get the term of a message content, used for cleanup
+  op get-term : Content -> Nat .
+  eq get-term(SetLog(N, led)) = N .
+  eq get-term(SetLogResponse(N, B)) = N .
+  eq get-term(Commit(N, E)) = N .
+  eq get-term(RequestVote(N, E)) = N .
+  eq get-term(Vote(N, B)) = N .
+  eq get-term(CheckHeartbeat(N)) = N .
+  eq get-term(Query(cmd(N))) = N .
+
+  --- delete a message if the term of its contents is less than the term of the object
+  ceq 
+    {T, (M)}
+    < O : C | currentTerm : N, AS > AC {T | SL} =
+    < O : C | currentTerm : N, AS > AC {T | SL}
+    if N > get-term(cont(M)) /\ dest(M) == O .
+endm
+
+mod LEADER is 
+  --- a leader node handles incoming queries and replication
+  pr NODE .
+
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  var led led' comled oldled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 term term-res new-term : Nat .
+  var B : Bool .
+  var M : Msg .
+  var E E1 E2 : Entry .
+  var T : Float . vars HB HT : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- when given a query, add to log and send to all other nodes 
+  crl [query-leader] : 
+    {T, (Query(C) from cli to lea)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode | currentTerm : term, log : led , 
+      neighbors : fols, waiting : false, number-yes : N1, 
+      number-response : N2, AS > 
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode | currentTerm : term, log : led', 
+      neighbors : fols, waiting : true , number-yes : 1 , 
+      number-response : 0 , AS > 
+    AC insertList({T | SL},(propagate SetLog(term, led') from lea to fols at T)) 
+    if led' := led ; entry(index(head(led)) + 1, term, C) 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,Query(C),CRVCL) .
+
+  --- acknowledge that log was updated
+  crl [set-log-response-leader] : 
+    {T, (SetLogResponse(term, B) from fol to lea)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode | currentTerm : term, log : led, 
+      number-yes : N1, number-response : N2, AS >
+    AC {T | SL}
+    => 
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode | currentTerm : term, log : led,
+      number-yes : N1 + to-nat(B), number-response : N2 + 1, AS >
+    AC {T | SL} 
+  if CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,SetLogResponse(term, B),CRVCL) .
+
+  --- when everyone responds, commit if majority said yes, retry if not
+  crl [commit] :
+    < lea : LeaderNode | currentTerm : term, waiting : true , 
+      neighbors : oids, log : led, committed : comled, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N3, AS >
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode | currentTerm : term, waiting : false, 
+      neighbors : oids, log : led, committed : led, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N3, AS >
+    AC insertList({T | SL},(propagate Commit(term, head(led)) from lea to oids at T))
+    if N2 >= N1 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,nullCON,nilCL) .
+  
+  ceq eagerEnabled(    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+< lea : LeaderNode | currentTerm : term, waiting : true , 
+      neighbors : oids, log : led, committed : comled, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N3, AS > AC) = true
+  if N2 >= N1 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,nullCON,nilCL) .
+
+    --- vote yes if log not as up-to-date 
+  crl [leader-vote] :
+    {T, (RequestVote(new-term, E2) from fol to lea)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode | currentTerm : term    , log : led ; E1, waiting : B, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : FollowerNode | currentTerm : new-term, log : led ; E1, waiting : false, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},delay-msg(Vote(new-term, compare-log(E1, E2)) from lea to fol, T) ; 
+      [T + HT, CheckHeartbeat(new-term) from lea to lea, 0]) 
+    if (new-term >= term) 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,RequestVote(new-term, E2),CRVCL) .
+
+    --- set the log of the leader 
+  crl [leader-set-log] :
+    {T, (SetLog(new-term, led) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : LeaderNode | currentTerm : term    , log : oldled, waiting : B, 
+      heartbeat : HB, heartbeat-timeout : HT, AS >
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : new-term, log : led, waiting : false, 
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},
+      delay-msg(SetLogResponse(new-term, true) from fol to lea, T) ;
+      [T + HT, CheckHeartbeat(new-term) from fol to fol, 0]) 
+    if new-term >= term 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,SetLog(new-term, led),CRVCL) .
+
+  eq  {T, (Vote(term, B) from fol to lea)}
+  < lea : LeaderNode | AS > = < lea : LeaderNode | AS > .
+  eq  {T, (CheckHeartbeat(term) from lea to lea)}
+  < lea : LeaderNode | AS > = < lea : LeaderNode | AS > .
+
+endm
+
+mod FOLLOWER is 
+  --- a follower node is the most usual state - they wait for a message (commit, become leader, etc) and respond or change accordingly
+  pr NODE .
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  vars led led2 oldled comled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 term new-term term-res : Nat .
+  var E E1 E2 : Entry .
+  var M : Msg .
+  var B : Bool . vars HB HT : Float .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- set the log of the leader 
+  crl [set-log-follower] :
+    {T, (SetLog(new-term, led) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : term    , log : oldled,
+      heartbeat : HB, heartbeat-timeout : HT, AS >
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : new-term, log : led,
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},
+      delay-msg(SetLogResponse(new-term, true) from fol to lea, T) ;
+      [T + HT, CheckHeartbeat(new-term) from fol to fol, 0]) 
+    if new-term >= term 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,SetLog(new-term, led),CRVCL) .
+
+  --- commit up to entry E if not committed (and update state machine with led ; E, if modeled)
+  crl [commit-follower] :
+    {T, (Commit(new-term, E) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : term    , log : comled ; led ; E ; led2, 
+      committed : comled          , heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : new-term, log : comled ; led ; E ; led2, 
+      committed : comled ; led ; E, heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},[T + HT, CheckHeartbeat(new-term) from fol to fol, 0])
+    if new-term >= term 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,Commit(new-term, E),CRVCL) .
+
+  --- if log doesn't have E or E is already committed, ignore
+  crl [cant-commit-follower] :
+    {T, (Commit(new-term, E) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : term    , log : led, 
+      committed : comled, heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    => 
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : new-term, log : led, 
+      committed : comled, heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},[T + HT, CheckHeartbeat(new-term) from fol to fol, 0])
+    if (new-term >= term) and ((not contains(led, E)) or (contains(comled, E))) 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,Commit(new-term, E),CRVCL) .
+
+  --- delete setlogresponse messages
+  crl [follower-set-log-response] :
+    {T, (SetLogResponse(term, B) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | AS > AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | AS > AC {T | SL} 
+  if CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,SetLogResponse(term, B),CRVCL) .
+
+  --- delete vote messages
+  crl [follower-vote-result] :
+    {T, (Vote(term, B) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | AS > AC {T | SL} 
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | AS > AC {T | SL} 
+  if CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,Vote(term, B),CRVCL) .
+
+  --- send new term and last entry to campaign, if timeout
+  crl [campaign-leader-follower] :
+    {T, CheckHeartbeat(term) from fol to fol}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode  | currentTerm : term    , log : led ; E, 
+      neighbors : fols, number-yes : N1, number-response : N2, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : CandidateNode | currentTerm : (term + 1), log : led ; E, 
+      neighbors : fols, number-yes : 1 , number-response : 0 ,
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},(propagate RequestVote((term + 1), E) from fol to fols at T) ;
+      [T + HT, CheckHeartbeat(term + 1) from fol to fol,0])
+  if HB + HT <= T + 1.0e-4 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,CheckHeartbeat(term),CRVCL) .
+
+  --- not campaign, if not timeout
+  crl [campaign-leader-follower-not] :
+    {T, CheckHeartbeat(term) from fol to fol}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode  | currentTerm : term,
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : term, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+  if HB + HT > T + 1.0e-4 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,CheckHeartbeat(term),CRVCL) .
+
+  --- vote yes if log not as up-to-date 
+  crl [follower-vote] :
+    {T, (RequestVote(new-term, E2) from lea to fol)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : term    , log : led ; E1, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < fol : FollowerNode | currentTerm : new-term, log : led ; E1,
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},delay-msg(Vote(new-term, compare-log(E1, E2)) from fol to lea, T))
+    if (new-term >= term) 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,fol,RequestVote(new-term, E2),CRVCL) .
+
+  eq  {T, (Vote(term, B) from fol to lea)}
+  < lea : FollowerNode | AS > = < lea : FollowerNode | AS > .
+  eq  {T, (Query(C) from cli to fol)}
+  < fol : FollowerNode | AS > = < fol : FollowerNode | AS > .
+
+endm
+
+mod CANDIDATE is 
+  --- a candidate node sends request votes to other nodes and waits for responses 
+  pr NODE .
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  vars led led2 oldled comled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 N4 term new-term term-res : Nat .
+  var E : Entry .
+  var M : Msg .
+  var B : Bool . vars HB HT : Float .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- receive yes or not vote
+  crl [candidate-receive-vote] : 
+    {T, (Vote(term, B) from fol to lea)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : CandidateNode | currentTerm : term, number-yes : N1            , 
+      number-response : N2    , AS > 
+    AC {T | SL}
+    => 
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : CandidateNode | currentTerm : term, number-yes : N1 + to-nat(B), 
+      number-response : N2 + 1, AS > 
+    AC {T | SL} 
+  if CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,Vote(term, B),CRVCL) .
+
+  --- when everyone responds, become leader and propegate log if majority voted yes
+  crl [success-leader] :
+    < lea : CandidateNode | currentTerm : term, log : led, neighbors : fols, 
+      waiting : B   , majority : N1, number-yes : N2, number-neighbors : N3, 
+      number-response : N4, AS > 
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : LeaderNode    | currentTerm : term, log : led, neighbors : fols, 
+      waiting : false, majority : N1, number-yes : 1 , number-neighbors : N3, 
+      number-response : 0 , AS >
+    AC insertList({T | SL}, delay-msg(BecomeLeader(term,lea) from lea to client, T))
+    if N2 >= N1 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,nullCON,nilCL) .
+  
+  ceq eagerEnabled(    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+< lea : CandidateNode | currentTerm : term, log : led, neighbors : fols, 
+      waiting : B   , majority : N1, number-yes : N2, number-neighbors : N3, 
+      number-response : N4, AS > AC) = true
+  if N2 >= N1 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,nullCON,nilCL) .
+
+  --- when everyone responds, if failed, pass on leader request
+  crl [fail-leader] :
+    < lea : CandidateNode | currentTerm : term, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N4, AS > 
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    AC {T | SL}
+    =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : FollowerNode  | currentTerm : term, majority : N1,
+      number-yes : N2, number-neighbors : N3, number-response : N4, AS >
+    AC {T | SL}
+    if N2 + N3 < N1 + N4 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,nullCON,nilCL) .
+    --- (N2 + N3 - N4 < N1)
+  
+  ceq eagerEnabled(    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+< lea : CandidateNode | currentTerm : term, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N4, AS > AC) = true
+  if N2 + N3 < N1 + N4 
+    /\ CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,nullCON,nilCL) .
+
+
+  --- give up campaign
+  crl [candidate-give-up-campaign] : 
+    {T, (CheckHeartbeat(term) from lea to lea)}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : CandidateNode | currentTerm : term, number-yes : N1, 
+      number-response : N2, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    => 
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < lea : FollowerNode | currentTerm : term, number-yes : 1, 
+      number-response : 0, 
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},[(T + HT), (CheckHeartbeat(term) from lea to lea),0]) 
+  if CRnotFault(CRFS,M4,R41,R42,CrushOid,lea,CheckHeartbeat(term),CRVCL) .
+
+  eq  {T, (RequestVote(new-term, E) from lea to fol)}
+    < fol : CandidateNode | AS > = < fol : CandidateNode | AS > .
+
+endm
+
+mod CLIENT is
+  inc NODE .
+  
+  sort command-list .
+  op empty : -> command-list [ctor] .
+  subsort Command < command-list .
+  op _;_ : command-list command-list -> command-list [ctor assoc id: empty] .
+
+  --- nodes that are alive
+  op live :_ : Addresses -> Attribute [ctor gather(&)] .
+  --- leader node
+  op leader :_ : Address -> Attribute [ctor gather(&)] .
+  --- leader history
+  op history :_ : Addresses -> Attribute [ctor gather(&)] .
+
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  vars led led2 oldled comled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 term new-term term-res : Nat .
+  var E : Entry .
+  var M : Msg .
+  var B : Bool .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  crl [send-cmd] :
+    {T, BecomeLeader(new-term,lea) from lea to cli}
+    < injector : Injector | 
+      CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < cli : Client | currentTerm : term, leader : fol, history : oids, AS >
+    AC {T | SL}
+  =>
+    < injector : Injector | 
+      CRmood : rand, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+        CRcrushRate : R41, CRrebootRate : R42,
+      ASFAULT >
+    < cli : Client | currentTerm : new-term, leader : lea, history : (oids ; lea), AS >
+    AC insertList({T | SL},delay-msg(Query(cmd(new-term)) from cli to lea,T)) 
+  if CRnotFault(CRFS,M4,R41,R42,CrushOid,cli,BecomeLeader(new-term,lea),CRVCL) .
+    --- AC {T | SL} .
+
+endm
+
+mod RAFT is
+  inc LEADER + FOLLOWER + CANDIDATE + CLIENT .
+endm

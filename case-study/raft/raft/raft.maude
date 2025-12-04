@@ -1,0 +1,492 @@
+--- Raft, New Leader Election
+--- 2023.10.18 15:26
+load ../apmaude
+mod LEDGER is 
+  --- index, term, and command form an entry
+  --- list of entries form a ledger
+  pr STRING .
+  pr NAT .
+  pr BOOL .
+  sorts Command Entry Ledger .
+  subsort String < Command .
+  subsort Entry < Ledger .
+  op entry : Nat Nat Command -> Entry [ctor] .
+  op empty : -> Ledger [ctor] .
+  op _;_ : Ledger Ledger -> Ledger [ctor assoc id: empty] .
+  --- indexing 
+  vars L1 L2 : Ledger .
+  vars ind ter : Nat .
+  var C : Command .
+
+  ---unused
+  op _`[_`] : Ledger Nat -> Entry .
+  eq (L1 ; entry(ind, ter, C) ; L2) [ind] = entry(ind, ter, C) .
+
+  --- check ledger contains entry 
+  var E E1 E2 : Entry .
+  op contains : Ledger Entry -> Bool .
+  eq contains(L1 ; E ; L2, E) = true .
+  eq contains(L1, E) = false [owise] .
+
+  --- get top of ledger
+  op head : Ledger -> Entry .
+  eq head(L1 ; E) = E .
+
+  --- helpers
+  op index : Entry -> Nat .
+  op term : Entry -> Nat .
+  op command : Entry -> Command .
+  eq index(entry(ind, ter, C)) = ind .
+  eq term(entry(ind, ter, C)) = ter .
+  eq command(entry(ind, ter, C)) = C .
+
+  --- check if E1 <= E2, so E2 is at least as up to date as E1 
+  op compare-log : Entry Entry -> Bool .
+  eq compare-log(E1, E2) = term(E1) < term(E2) or (term(E1) == term(E2) and index(E1) <= index(E2)) . 
+endm 
+
+mod MESSAGE is 
+  inc APMAUDE .
+  pr LEDGER .
+  pr NAT .
+  pr BOOL .
+  --- for leader
+  op Query : Command -> Content [ctor] .
+  --- the nat of the next three commands is the current term
+  --- send the ledger to followers 
+  op SetLog : Nat Ledger -> Content [ctor] .
+  --- vote yes if log updated, no otherwise (if node is down or setlog came from dead leader)
+  op SetLogResponse : Nat Bool -> Content [ctor] .
+  --- tell nodes to commit up to the designated entry (if entry doesn't exist, do nothing)
+  op Commit : Nat Entry -> Content [ctor] .
+  --- announce that become leader for specified term 
+  op BecomeLeader : Nat Address -> Content [ctor] .
+  --- request a vote from a node, giving the term and ledger of the candidate
+  op RequestVote : Nat Entry -> Content [ctor] .
+  --- if the logs have latest entries with different terms, the higher term is more up-to-date.
+  --- otherwise, the higher index is more up-to-date
+  --- Vote yes (true) if candidate is at least as up-to-date and not offline, no otherwise
+  op Vote : Nat Bool -> Content [ctor] .
+  --- check whether heartbeat timeout
+  op CheckHeartbeat : Nat -> Content [ctor] .
+  --- for client
+  op cmd : Nat -> Command [ctor] .
+
+  op dest : Msg -> Address .
+  op cont : Msg -> Content .
+  var C : Content .
+  vars O O2 : Address .
+  eq dest(C from O to O2) = O2 .
+  eq cont(C from O to O2) = C .
+endm
+
+
+mod NODE is
+  pr MESSAGE .
+  pr STRING .
+  pr NAT .
+  pr LEDGER .
+  pr BOOL .
+
+  op node : Nat -> Address [ctor] .
+  op FollowerNode : -> ActorType .
+  op LeaderNode : -> ActorType .
+  op CandidateNode : -> ActorType .
+  op Client : -> ActorType [ctor] .
+  op client : -> Address [ctor] .
+
+  --- term of node. starts at 0. 1 term corresponds to 1 election 
+  op currentTerm :_ : Nat -> Attribute [ctor gather(&)] .
+  --- current ledger 
+  op log :_ : Ledger -> Attribute [ctor gather(&)] .
+  --- committed commands (relfected on state machine)
+  op committed :_ : Ledger -> Attribute [ctor gather(&)] .
+  --- other nodes 
+  op neighbors :_ : Addresses -> Attribute [ctor gather(&)] .
+  --- whether leader is waiting for nodes setlog
+  op waiting :_ : Bool -> Attribute [ctor gather(&)] .
+  --- value for majority of nodes 
+  op majority :_ : Nat -> Attribute [ctor gather(&)] .
+  --- number of neighbors (static)
+  op number-neighbors :_ : Nat -> Attribute [ctor gather(&)] .
+  --- number of yes response (election or commit)
+  op number-yes :_ : Nat -> Attribute [ctor gather(&)] .
+  --- number of no responses
+  op number-response :_ : Nat -> Attribute [ctor gather(&)] .
+  --- last time contact with leader
+  op heartbeat :_ : Float -> Attribute [ctor gather(&)] .
+  --- no heartbeat timeout
+  op heartbeat-timeout :_ : Float -> Attribute [ctor gather(&)] .
+
+  op to-nat : Bool -> Nat .
+  eq to-nat(false) = 0 .
+  eq to-nat(true) = 1 .
+
+  --- cleanup for each object
+  var O : Address .
+  var C : ActorType .
+  var N : Nat .
+  var M : Msg .
+  var MC : Content .
+  var AS : AttributeSet .
+  var led : Ledger .
+  var E : Entry .
+  var B : Bool .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- get the term of a message content, used for cleanup
+  op get-term : Content -> Nat .
+  eq get-term(SetLog(N, led)) = N .
+  eq get-term(SetLogResponse(N, B)) = N .
+  eq get-term(Commit(N, E)) = N .
+  eq get-term(RequestVote(N, E)) = N .
+  eq get-term(Vote(N, B)) = N .
+  eq get-term(CheckHeartbeat(N)) = 999 .
+  eq get-term(Query(cmd(N))) = N .
+
+  --- delete a message if the term of its contents is less than the term of the object
+  ceq 
+    {T, (M)}
+    < O : C | currentTerm : N, AS > AC {T | SL} =
+    < O : C | currentTerm : N, AS > AC {T | SL}
+    if N > get-term(cont(M)) /\ dest(M) == O .
+endm
+
+mod LEADER is 
+  --- a leader node handles incoming queries and replication
+  pr NODE .
+
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  var led led' comled oldled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 term term-res new-term : Nat .
+  var B : Bool .
+  var M : Msg .
+  var E E1 E2 : Entry .
+  var T : Float . vars HB HT : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- when given a query, add to log and send to all other nodes 
+  crl [query-leader] : 
+    {T, (Query(cmd(term)) from cli to lea)}
+    < lea : LeaderNode | currentTerm : term, log : led , 
+      neighbors : fols, waiting : false, number-yes : N1, 
+      number-response : N2, AS > 
+    AC {T | SL}
+    =>
+    < lea : LeaderNode | currentTerm : term, log : led', 
+      neighbors : fols, waiting : true , number-yes : 1 , 
+      number-response : 0 , AS > 
+    AC insertList({T | SL},(propagate SetLog(term, led') from lea to fols at T)) 
+    if led' := led ; entry(index(head(led)) + 1, term, cmd(term)) .
+
+  --- acknowledge that log was updated
+  rl [set-log-response-leader] : 
+    {T, (SetLogResponse(term, B) from fol to lea)}
+    < lea : LeaderNode | currentTerm : term, log : led, 
+      number-yes : N1, number-response : N2, AS >
+    AC {T | SL}
+    => 
+    < lea : LeaderNode | currentTerm : term, log : led,
+      number-yes : N1 + to-nat(B), number-response : N2 + 1, AS >
+    AC {T | SL} .
+
+  --- when everyone responds, commit if majority said yes, retry if not
+  crl [commit] :
+    < lea : LeaderNode | currentTerm : term, waiting : true , 
+      neighbors : oids, log : led, committed : comled, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N3, AS >
+    AC {T | SL}
+    =>
+    < lea : LeaderNode | currentTerm : term, waiting : false, 
+      neighbors : oids, log : led, committed : led, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N3, AS >
+    AC insertList({T | SL},(propagate Commit(term, head(led)) from lea to oids at T))
+    if N2 >= N1 .
+  
+  ceq eagerEnabled(< lea : LeaderNode | currentTerm : term, waiting : true , 
+      neighbors : oids, log : led, committed : comled, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N3, AS > AC) = true
+  if N2 >= N1 .
+
+    --- vote yes if log not as up-to-date 
+  crl [leader-vote] :
+    {T, (RequestVote(new-term, E2) from fol to lea)}
+    < lea : LeaderNode | currentTerm : term    , log : led ; E1, waiting : B, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < lea : FollowerNode | currentTerm : new-term, log : led ; E1, waiting : false, 
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},delay-msg(Vote(new-term, compare-log(E1, E2)) from lea to fol, T) ; 
+      [T + HT, CheckHeartbeat(new-term) from lea to lea, 0]) 
+    if (new-term >= term) .
+
+    --- set the log of the leader 
+  crl [leader-set-log] :
+    {T, (SetLog(new-term, led) from lea to fol)}
+    < fol : LeaderNode | currentTerm : term    , log : oldled, waiting : B, 
+      heartbeat : HB, heartbeat-timeout : HT, AS >
+    AC {T | SL}
+    =>
+    < fol : FollowerNode | currentTerm : new-term, log : led, waiting : false, 
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},
+      delay-msg(SetLogResponse(new-term, true) from fol to lea, T) ;
+      [T + HT, CheckHeartbeat(new-term) from fol to fol, 0]) 
+    if new-term >= term .
+
+  eq  {T, (Vote(term, B) from fol to lea)}
+  < lea : LeaderNode | AS > = < lea : LeaderNode | AS > .
+  eq  {T, (CheckHeartbeat(term) from lea to lea)}
+  < lea : LeaderNode | AS > = < lea : LeaderNode | AS > .
+
+endm
+
+mod FOLLOWER is 
+  --- a follower node is the most usual state - they wait for a message (commit, become leader, etc) and respond or change accordingly
+  pr NODE .
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  vars led led2 oldled comled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 term new-term term-res term-chb : Nat .
+  var E E1 E2 : Entry .
+  var M : Msg .
+  var B : Bool . vars HB HT : Float .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- set the log of the leader 
+  crl [set-log-follower] :
+    {T, (SetLog(new-term, led) from lea to fol)}
+    < fol : FollowerNode | currentTerm : term    , log : oldled,
+      heartbeat : HB, heartbeat-timeout : HT, AS >
+    AC {T | SL}
+    =>
+    < fol : FollowerNode | currentTerm : new-term, log : led,
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},
+      delay-msg(SetLogResponse(new-term, true) from fol to lea, T) ;
+      [T + HT, CheckHeartbeat(new-term) from fol to fol, 0]) 
+    if new-term >= term .
+
+  --- commit up to entry E if not committed (and update state machine with led ; E, if modeled)
+  crl [commit-follower] :
+    {T, (Commit(new-term, E) from lea to fol)}
+    < fol : FollowerNode | currentTerm : term    , log : comled ; led ; E ; led2, 
+      committed : comled          , heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < fol : FollowerNode | currentTerm : new-term, log : comled ; led ; E ; led2, 
+      committed : comled ; led ; E, heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},[T + HT, CheckHeartbeat(new-term) from fol to fol, 0])
+    if new-term >= term .
+
+  --- if log doesn't have E or E is already committed, ignore
+  crl [cant-commit-follower] :
+    {T, (Commit(new-term, E) from lea to fol)}
+    < fol : FollowerNode | currentTerm : term    , log : led, 
+      committed : comled, heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    => 
+    < fol : FollowerNode | currentTerm : new-term, log : led, 
+      committed : comled, heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},[T + HT, CheckHeartbeat(new-term) from fol to fol, 0])
+    if (new-term >= term) and ((not contains(led, E)) or (contains(comled, E))) .
+
+  --- delete setlogresponse messages
+  rl [follower-set-log-response] :
+    {T, (SetLogResponse(term, B) from lea to fol)}
+    < fol : FollowerNode | AS > AC {T | SL}
+    =>
+    < fol : FollowerNode | AS > AC {T | SL} .
+
+  --- delete vote messages
+  rl [follower-vote-result] :
+    {T, (Vote(term, B) from lea to fol)}
+    < fol : FollowerNode | AS > AC {T | SL} 
+    =>
+    < fol : FollowerNode | AS > AC {T | SL} .
+
+  --- send new term and last entry to campaign, if timeout
+  crl [campaign-leader-follower] :
+    {T, CheckHeartbeat(term-chb) from fol to fol}
+    < fol : FollowerNode  | currentTerm : term    , log : led ; E, 
+      neighbors : fols, number-yes : N1, number-response : N2, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < fol : CandidateNode | currentTerm : (term + 1), log : led ; E, 
+      neighbors : fols, number-yes : 1 , number-response : 0 ,
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},(propagate RequestVote((term + 1), E) from fol to fols at T) ;
+      [T + HT, CheckHeartbeat(term + 1) from fol to fol,0])
+  if HB + HT <= T + 1.0e-4 .
+
+  --- not campaign, if not timeout
+  crl [campaign-leader-follower-not] :
+    {T, CheckHeartbeat(term-chb) from fol to fol}
+    < fol : FollowerNode  | currentTerm : term,
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < fol : FollowerNode | currentTerm : term, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+  if HB + HT > T + 1.0e-4 .
+
+  --- vote yes if log not as up-to-date 
+  crl [follower-vote] :
+    {T, (RequestVote(new-term, E2) from lea to fol)}
+    < fol : FollowerNode | currentTerm : term    , log : led ; E1, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    =>
+    < fol : FollowerNode | currentTerm : new-term, log : led ; E1,
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},delay-msg(Vote(new-term, compare-log(E1, E2)) from fol to lea, T))
+    if (new-term >= term) .
+
+  eq  {T, (Vote(term, B) from fol to lea)}
+  < lea : FollowerNode | AS > = < lea : FollowerNode | AS > .
+  eq  {T, (Query(C) from cli to fol)}
+  < fol : FollowerNode | AS > = < fol : FollowerNode | AS > .
+
+endm
+
+mod CANDIDATE is 
+  --- a candidate node sends request votes to other nodes and waits for responses 
+  pr NODE .
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  vars led led2 oldled comled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 N4 term new-term term-res : Nat .
+  var E : Entry .
+  var M : Msg .
+  var B : Bool . vars HB HT : Float .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  --- receive yes or not vote
+  rl [candidate-receive-vote] : 
+    {T, (Vote(term, B) from fol to lea)}
+    < lea : CandidateNode | currentTerm : term, number-yes : N1            , 
+      number-response : N2    , AS > 
+    AC {T | SL}
+    => 
+    < lea : CandidateNode | currentTerm : term, number-yes : N1 + to-nat(B), 
+      number-response : N2 + 1, AS > 
+    AC {T | SL} .
+
+  --- when everyone responds, become leader and propegate log if majority voted yes
+  crl [success-leader] :
+    < lea : CandidateNode | currentTerm : term, log : led, neighbors : fols, 
+      waiting : B   , majority : N1, number-yes : N2, number-neighbors : N3, 
+      number-response : N4, AS > 
+    AC {T | SL}
+    =>
+    < lea : LeaderNode    | currentTerm : term, log : led, neighbors : fols, 
+      waiting : false, majority : N1, number-yes : 1 , number-neighbors : N3, 
+      number-response : 0 , AS >
+    AC insertList({T | SL}, delay-msg(BecomeLeader(term,lea) from lea to client, T))
+    if N2 >= N1 .
+  
+  ceq eagerEnabled(< lea : CandidateNode | currentTerm : term, log : led, neighbors : fols, 
+      waiting : B   , majority : N1, number-yes : N2, number-neighbors : N3, 
+      number-response : N4, AS > AC) = true
+  if N2 >= N1 .
+
+  --- when everyone responds, if failed, pass on leader request
+  crl [fail-leader] :
+    < lea : CandidateNode | currentTerm : term, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N4, AS > 
+    AC {T | SL}
+    =>
+    < lea : FollowerNode  | currentTerm : term, majority : N1,
+      number-yes : N2, number-neighbors : N3, number-response : N4, AS >
+    AC {T | SL}
+    if N2 + N3 < N1 + N4 .
+    --- (N2 + N3 - N4 < N1)
+  
+  ceq eagerEnabled(< lea : CandidateNode | currentTerm : term, majority : N1, 
+      number-yes : N2, number-neighbors : N3, number-response : N4, AS > AC) = true
+  if N2 + N3 < N1 + N4 .
+
+
+  --- give up campaign
+  rl [candidate-give-up-campaign] : 
+    {T, (CheckHeartbeat(term) from lea to lea)}
+    < lea : CandidateNode | currentTerm : term, number-yes : N1, 
+      number-response : N2, 
+      heartbeat : HB, heartbeat-timeout : HT, AS > 
+    AC {T | SL}
+    => 
+    < lea : FollowerNode | currentTerm : term, number-yes : 1, 
+      number-response : 0, 
+      heartbeat : T, heartbeat-timeout : HT, AS > 
+    AC insertList({T | SL},[(T + HT), (CheckHeartbeat(term) from lea to lea),0]) .
+
+  eq  {T, (RequestVote(new-term, E) from lea to fol)}
+    < fol : CandidateNode | AS > = < fol : CandidateNode | AS > .
+  eq  {T, (SetLog(new-term, led) from lea to fol)}
+    < fol : CandidateNode | AS > = < fol : CandidateNode | AS > .
+
+endm
+
+mod CLIENT is
+  inc NODE .
+  
+  sort command-list .
+  op empty : -> command-list [ctor] .
+  subsort Command < command-list .
+  op _;_ : command-list command-list -> command-list [ctor assoc id: empty] .
+
+  --- nodes that are alive
+  op live :_ : Addresses -> Attribute [ctor gather(&)] .
+  --- leader node
+  op leader :_ : Address -> Attribute [ctor gather(&)] .
+  --- leader history
+  op history :_ : Addresses -> Attribute [ctor gather(&)] .
+
+  var C : Command .
+  var oids : Addresses .
+  var cli lea fol : Address .
+  var fols : Addresses .
+  vars led led2 oldled comled : Ledger .
+  var AS : AttributeSet .
+  var N1 N2 N3 term new-term term-res : Nat .
+  var E : Entry .
+  var M : Msg .
+  var B : Bool .
+  var T : Float .
+  var AC : ActorConfig . var S : Scheduler .
+  var SL : ScheduleList . var AM : ActiveMsg .
+
+  rl [send-cmd] :
+    {T, BecomeLeader(new-term,lea) from lea to cli}
+    < cli : Client | currentTerm : term, leader : fol, history : oids, AS >
+    AC {T | SL}
+  =>
+    < cli : Client | currentTerm : new-term, leader : lea, history : (oids ; lea), AS >
+    AC insertList({T | SL},delay-msg(Query(cmd(new-term)) from cli to lea,T)) .
+    --- AC {T | SL} .
+
+endm
+
+mod RAFT is
+  inc LEADER + FOLLOWER + CANDIDATE + CLIENT .
+endm

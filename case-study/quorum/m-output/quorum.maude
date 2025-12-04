@@ -1,0 +1,642 @@
+load ../input-modules/event-quorum.maude
+load ../fault-lib
+
+mod FAULT-PARTITION is
+  inc FAULT-INTERFACE .
+  sort PAFaultStatus .
+  ops standby cutting recovered : -> PAFaultStatus [ctor] .
+  sort Partition .
+  ops _:|:_ : AddressListF AddressListF -> Partition [ctor] .
+
+  op PAstatus :_ : PAFaultStatus -> Attribute [ctor] .
+  op PAallActors :_ : AddressListF -> Attribute [ctor] .
+  op PApart :_ : Partition -> Attribute [ctor] .
+  op PAcutMsg :_ : ScheduleList -> Attribute [ctor] .
+  op PAmood :_ : Float -> Attribute [ctor] .
+  --- rate for partition, set by initconf, not use
+  op PApartRate :_ : Float -> Attribute [ctor] .
+  --- rate for recovery, set by initconf, not use
+  op PArecoRate :_ : Float -> Attribute [ctor] .
+  --- partition duration time
+  op PAdurationTime :_ : Float -> Attribute [ctor] .
+  --- partition occur time
+  op PAoccurTime :_ : Float -> Attribute [ctor] .
+
+
+  vars SL SL2 : ScheduleList .
+  vars AS1 AS2 : AttributeSet . vars AL1 AL2 AL : AddressListF .
+  vars O O1 O2 : Address . var MP : Content . var FS : PAFaultStatus .
+  vars T M R R2 TP TO : Float . var PA : Partition .
+  var AC : ActorConfig . var AM : ActiveMsg .
+  crl [make-part-random-part] :
+    < injector : Injector | PAstatus : standby, PAoccurTime : TO,
+        PApart : (nilALF :|: nilALF), PAallActors : AL, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : cutting, PAoccurTime : TO,
+        PApart : devideAddresses(AL,0.9,(nilALF :|: nilALF)), 
+        PAallActors : AL, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if TO <= T .
+  crl [make-part-predefined-part] :
+    < injector : Injector | PAstatus : standby, PAoccurTime : TO,
+        PApart : (AL1 :|: AL2), PAallActors : AL, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : cutting, PAoccurTime : TO,
+        PApart : (AL1 :|: AL2), PAallActors : AL, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if TO <= T /\ AL1 =/= nilALF /\ AL2 =/= nilALF .
+  crl [cut-part] :
+    < injector : Injector | PAstatus : cutting, PAmood : M,
+        PApart : (AL1 :|: AL2), PAcutMsg : SL2, PAoccurTime : TO, PAdurationTime : TP,
+        faultMsg : {T, (MP from O2 to O1)}, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  => 
+    < injector : Injector | PAstatus : cutting, PAmood : rand,
+        PApart : (AL1 :|: AL2), PAcutMsg : (SL2 ; [T,(MP from O2 to O1),0]),
+        PAoccurTime : TO, PAdurationTime : TP,
+        faultMsg : null, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if isCut(O1,O2,AL1,AL2) /\ (TO + TP) > T .
+  crl [recover] :
+    < injector : Injector | PAstatus : cutting, PAmood : M, 
+      PAoccurTime : TO, PAdurationTime : TP, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : recovered, PAmood : rand, 
+      PAoccurTime : TO, PAdurationTime : TP, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if (TO + TP) <= T .
+
+  --- devide Addresses to 2 non-empty Addresses
+  --- rew devideAddresses((server ; client(0) ; client(1) ; client(2)),0.9,(empty :|: empty)) .
+  op devideAddresses : AddressListF Float Partition -> Partition .
+  ceq devideAddresses((O ^:^ AL),R,(AL1 :|: AL2)) = devideAddresses(AL,rand,((O ^:^ AL1) :|: AL2)) 
+      if R >= 0.5 [owise] .
+  ceq devideAddresses((O ^:^ AL),R,(AL1 :|: AL2)) = devideAddresses(AL,rand,(AL1 :|: (O ^:^ AL2)))
+      if R < 0.5 [owise] .
+  eq devideAddresses(O,R,(nilALF :|: AL2)) = devideAddresses(nilALF,rand,(O :|: AL2)) .
+  eq devideAddresses(O,R,(AL1 :|: nilALF)) = devideAddresses(nilALF,rand,(AL1 :|: O)) .
+  eq devideAddresses(nilALF,R,PA) = PA .
+
+  --- if (O1 in AL1 and O2 in AL2) or (O2 in AL1 and O1 in AL2), then true
+  op isCut : Address Address AddressListF AddressListF -> Bool [ctor] .
+  op isCutRec : Address Address AddressListF AddressListF -> Bool [ctor] .
+  eq isCut(O1,O2,AL1,AL2) = 
+      (isInAddresses(O1,AL1) and isInAddresses(O2,AL2))
+      or (isInAddresses(O1,AL2) and isInAddresses(O2,AL1)) .
+  op isInAddresses : Address AddressListF -> Bool [ctor] .
+  eq isInAddresses(O1, (AL1 ^:^ O1 ^:^ AL2)) = true .
+  eq isInAddresses(O1, AL1) = false [owise] .
+
+  --- whether rules in target module can go on, not fault point
+  --- PAnotFault(PAFaultStatus, mood, PAoccurTime, PArecoveryTime, curGlobalTime, SrcOid, DstOid, partAL1, partAL2)
+  op PAnotFault : PAFaultStatus Float Float Float Float Address Address AddressListF AddressListF -> Bool [ctor] .
+  ceq PAnotFault(standby,M,R,R2,T,O1,O2,AL1,AL2) = true if R > T .
+  --- not need recovery (recoveryTime > curTime) /\ not cut
+  ceq PAnotFault(cutting,M,R,R2,T,O1,O2,AL1,AL2) = true if R2 > T and not isCut(O1,O2,AL1,AL2) .
+  eq PAnotFault(recovered,M,R,R2,T,O1,O2,AL1,AL2) = true .
+  eq PAnotFault(FS,M,R,R2,T,O1,O2,AL1,AL2) = false [owise] .
+endm
+
+mod FAULT-COMPOSITE is
+  inc FAULT-PARTITION .
+
+  vars M1 M2 M3 M4 M5 M6 R1 R2 R31 R32 R41 R42 R5 T : Float .
+  var FL : FaultList . vars FT FT2 : FaultType .
+  var AS : AttributeSet .
+  var PAAL11 PAAL22 : AddressListF . var PAFS : PAFaultStatus .
+  vars SL SL2 : ScheduleList . vars O1 O2 : Address . var MP : Content .
+  ---   var CRFS : CRFaultStatus . vars CrashOid : Address . var CRVCL : ContentList .
+  var AC : ActorConfig . var MSG : Msg . var AM : ActiveMsg .
+  ---   var ECECO : ContentEquivocatePairList . var ECAL : AddressListF .
+  crl [make-fault-license] :
+  < injector : Injector | 
+  ---     MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+    PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+      PAoccurTime : R31, PAdurationTime : R32,
+  ---     CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid, CRvulnerableContent : CRVCL,
+  ---       CRcrashRate : R41, CRrebootRate : R42,
+  ---     DEmood : M5, DEfaultRate : R5,
+  ---     ECevilSrc : ECAL, ECequivocateContent : ECECO,
+    faultLog : SL2,
+    faultRegi : FL,
+    faultMsg : null, 
+    faultFlag : nonFF, AS > 
+    {T, (MP from O2 to O1)} AC {T | SL}
+  =>
+  < injector : Injector | 
+  ---     MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+    PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+      PAoccurTime : R31, PAdurationTime : R32,
+  ---     CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid,  CRvulnerableContent : CRVCL,
+  ---       CRcrashRate : R41, CRrebootRate : R42,
+  ---     DEmood : M5, DEfaultRate : R5,
+  ---     ECevilSrc : ECAL, ECequivocateContent : ECECO,
+    faultLog : (SL2 ; [T,(debugFlagM(0.0,0.0,0.0,0.0,M3,0.0) to injector),0]),
+    faultRegi : FL,
+    faultMsg : {T, (MP from O2 to O1)}, 
+    faultFlag : genefaultLicense(
+      geneFaultList((nonFault :: FL),(false
+  ---           :: (not MLnotFault(M1,R1)) 
+  ---           :: (not MDnotFault(M2,R2)) 
+          :: (not PAnotFault(PAFS,M3,R31,R31 + R32,T,O1,O2,PAAL11,PAAL22))
+  ---           :: (not CRnotFault(CRFS,M4,R41,R42,CrashOid,O1,MP,CRVCL))
+  ---           :: (not DEnotFault(M5,R5)) 
+  ---           :: (not ECnotFault({T, (MP from O2 to O1)},ECAL,ECECO))
+          )),0.0,rand,nonFault),
+    AS > 
+    AC {T | SL} faultTrigger
+  if false
+  ---     or not MLnotFault(M1,R1)
+  ---     or not MDnotFault(M2,R2)
+    or not PAnotFault(PAFS,M3,R31,R31 + R32,T,O1,O2,PAAL11,PAAL22) 
+  ---     or not CRnotFault(CRFS,M4,R41,R42,CrashOid,O1,MP,CRVCL) 
+  ---     or not DEnotFault(M5,R5)
+  ---     or not ECnotFault({T, (MP from O2 to O1)},ECAL,ECECO)
+    or false .
+  rl [fault-update-mood] :
+    < injector : Injector | 
+  ---       MLmood : M1, 
+  ---       MDmood : M2, 
+      PAmood : M3, 
+  ---       CRmood : M4,
+  ---       DEmood : M5,
+      faultMsg : {T, MSG}, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+  ---       MLmood : 0.9999, 
+  ---       MDmood : 0.9999,
+      PAmood : 0.9999, 
+  ---       CRmood : 0.9999,
+  ---       DEmood : 0.9999,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    {T, MSG} AC {T | SL} .
+  rl [fault-update-mood-2] :
+    < injector : Injector | 
+  ---       MLmood : M1, 
+  ---       MDmood : M2, 
+      PAmood : M3, 
+  ---       CRmood : M4,
+  ---       DEmood : M5,
+      faultMsg : null, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+  ---       MLmood : rand, 
+  ---       MDmood : rand,
+      PAmood : rand, 
+  ---       CRmood : rand,
+  ---       DEmood : rand,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    AC {T | SL} .
+
+  --- geneFaultList(FL,BL)
+  --- generate an FaultList, extract FL for according Bool in BL is true  
+  var BL : BoolList . var B : Bool .
+  op geneFaultList : FaultList BoolList -> FaultList [ctor] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = FT :: geneFaultList(FL,BL)
+    if B [owise] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = geneFaultList(FL,BL)
+    if not B [owise] .
+  eq geneFaultList(nilFL,nilBL) = nilFL .
+  --- generate faultLicense from FaultList, indicating FT be selected
+  --- genefaultLicense(FaultList,highestScore,currentScore,FaultType)
+  op genefaultLicense : FaultList Float Float FaultType -> FaultFlag [ctor] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R2,rand,FT)
+    if R2 > R1 [owise] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R1,rand,FT2)
+    if R2 <= R1 [owise] .
+  eq genefaultLicense(nilFL,R1,R2,FT) = faultLicense(FT) .
+endm
+
+--- quorum, ta
+load ../apmaude
+
+mod SORTS is
+  inc APMAUDE .
+   
+  sorts Read Write Operation Operations Key Value Timestamp Val Vals Id Result .  
+  subsort Float < Timestamp .
+  subsort Nat < Value .  
+  subsorts Read Write < Operation < Operations Content .
+  subsort Nat < Id .
+  subsort Val < Vals .
+  
+  op <_`,_> : Value Timestamp -> Val [ctor] .
+  op ack : -> Val .
+  
+  ops done fail : -> Value .
+  
+  op read : Id Key Timestamp -> Read .
+  op write : Id Key Value Timestamp -> Write .
+  
+  op ept : -> Operations .
+  op _::_ : Operations Operations -> Operations [assoc id: ept] .  
+  
+  op none : -> Vals .
+  op _;;_ : Vals Vals -> Vals [assoc comm id: none] .
+  
+  op reply : Id Val -> Content .
+
+  op issue : -> Content .
+
+  op tmo : Id -> Content .
+
+  op TMOLIMIT : -> Float .
+  eq TMOLIMIT = 5.0 .
+endm
+view Value from TRIV to SORTS is sort Elt to Value . endv
+view Id from TRIV to SORTS is sort Elt to Id . endv
+view Val from TRIV to SORTS is sort Elt to Val . endv
+view Key from TRIV to SORTS is sort Elt to Key . endv
+view AddressSetF from TRIV to SORTS is sort Elt to AddressSetF . endv
+view Vals from TRIV to SORTS is sort Elt to Vals . endv
+
+
+mod OBJS is
+  inc SORTS .
+  pr MAP{Id,Value} .  
+  pr MAP{Key,Val} .  
+  pr MAP{Key,AddressSetF} .  
+  pr MAP{Id,Vals} .  
+  
+  ops Coord Cohort : -> ActorType .
+  
+  --- for Coord
+  op ops:_ : Operations -> Attribute .
+  op replicas:_ : Map{Key,AddressSetF} -> Attribute .  
+  op waiting:_ : Map{Id,Vals} -> Attribute .
+  op results:_ : Map{Id,Vals} -> Attribute .
+  
+  --- for Cohort
+  op database:_ : Map{Key,Val} -> Attribute .
+endm
+
+
+mod QUORUM is
+  inc EVENT-QUORUM .
+  inc OBJS .
+  
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 M5 R1 R2 R31 R32 R41 R42 R5 : Float .
+  var ASFAULT : AttributeSet .
+  var PAFS : PAFaultStatus . vars PAAL11 PAAL22 : AddressListF .
+  vars O O' : Address .  vars ID ID' : Id .  var K : Key .
+  var OPS : Operations .  var R : Map{Key,AddressSetF} .
+  var AS : AttributeSet .  var P : Content .
+  var OS : AddressSetF .  var DB : Map{Key,Val} .
+  vars VAL VAL' : Val .  vars VALS VALS' : Vals .
+  var RS : Map{Id,Vals} .  vars TEMP IV : Map{Id,Vals} .
+  vars V V' V'' : Value .  vars TS TS' TS'' : Timestamp .
+  var T : Float . var SL : ScheduleList .
+  
+  ************
+  *** Read ***
+  ************
+      
+  crl [issue-read] :
+    {T, issue from O to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | ops: (read(ID,K,TS) :: OPS), waiting: empty,
+                  replicas: R, AS > 
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (startRead(O,ID) ; startTxn(O,ID) @ T)) >
+    < O : Coord | ops: OPS, waiting: (ID |-> none),
+                  replicas: R, AS > 
+    insertList({T | SL},propagate read(ID,K,TS) from O to R[K] at T) 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O,PAAL11,PAAL22) .
+  
+  crl [reply] :
+    {T,(read(ID,K,TS) from O' to O) }
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Cohort | database: DB, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Cohort | database: DB, AS > 
+    insertList({T | SL},delay-msg(reply(ID,DB[K]) from O to O',T)) 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [update-first] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    {T | SL}
+    < O : Coord | waiting: TEMP, results: RS, AS > 
+  if TEMP := ID |-> VALS ;; VAL /\ lenV(TEMP) == 1 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [update-second] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    {T | SL}
+    < O : Coord | waiting: TEMP, results: RS, AS >
+    [TMOLIMIT, tmo(ID) from O to O, 0]
+  if TEMP := ID |-> VALS ;; VAL /\ lenV(TEMP) == 2 /\ not quorum2(TEMP) 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [commit-read-second] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commitReadSucc(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID) @ T)) >
+    {T | SL}
+    < O : Coord | waiting: empty, results: most(TEMP,RS,T), AS >
+    [0.0, issue from O to O, 0]
+  if TEMP := ID |-> VALS ;; VAL /\ lenV(TEMP) == 2 /\ quorum2(TEMP) 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [commit-read-third-success] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commitReadSucc(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID) @ T)) >
+    {T | SL}
+    < O : Coord | waiting: empty, results: most(TEMP,RS,T), AS >
+    [0.0, issue from O to O, 0]
+  if TEMP := ID |-> VALS ;; VAL /\ lenV(TEMP) == 3 /\ quorum3(TEMP) 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [commit-read-third-fail] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commitReadFail(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID) @ T)) >
+    {T | SL}
+    < O : Coord | waiting: empty, results: insert(ID, < fail, T >, RS), AS >
+    [0.0, issue from O to O, 0]
+  if TEMP := ID |-> VALS ;; VAL /\ lenV(TEMP) == 3 /\ not quorum3(TEMP) 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  op lenV : Map{Id,Vals} -> Nat .
+  eq lenV(ID |-> VAL ;; VALS) = 1 + lenV(ID |-> VALS) .
+  eq lenV(ID |-> none ) = 0 .
+
+  --- whether the 3 val can pass quorum
+  op quorum3 : Map{Id,Vals} -> Bool .
+  --- for read
+  ceq quorum3(ID |-> < V, TS > ;; < V', TS' > ;; < V'', TS'' >) = true if V == V' .
+  eq quorum3(IV) = false [owise] .    
+
+  --- whether the 2 val can pass quorum
+  op quorum2 : Map{Id,Vals} -> Bool .
+  --- for read
+  ceq quorum2(ID |-> < V, TS > ;; < V', TS' >) = true if V == V' .
+  eq quorum2(IV) = false [owise] .
+
+  --- most val in 3 vals
+  op most : Map{Id,Vals} Map{Id,Vals} Float -> Map{Id,Vals} . 
+  *** for read
+  eq most(ID |-> < V, TS > ;; < V, TS' > ;; VALS, RS, T) = insert(ID, < V, T >, RS) .
+  
+  crl [commit-read-tmo-fail] :
+    {T, tmo(ID') from O to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commitReadFail(O,ID) ; commitRead(O,ID) ; commitTxn(O,ID) @ T)) >
+    < O : Coord | waiting: empty, results: insert(ID, < fail, T >, RS), AS >
+    [0.0, issue from O to O, 0]
+    {T | SL} 
+  if ID == ID' 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O,PAAL11,PAAL22) .
+
+  crl [quorum2-tmo-silent-1] :
+    {T, tmo(ID') from O to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: (ID |-> VALS), results: RS, AS >
+    {T | SL} 
+  if ID =/= ID' 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O,PAAL11,PAAL22) .
+
+  crl [quorum2-tmo-silent-2] :
+    {T, tmo(ID') from O to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: empty, results: RS, AS >
+    {T | SL}
+  =>
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: empty, results: RS, AS >
+    {T | SL} 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O,PAAL11,PAAL22) .
+
+  crl [silent] :
+    {T, (reply(ID,VAL) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | results: (ID |-> VALS, RS), AS >
+    {T | SL}
+  =>   
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | results: (ID |-> VALS, RS), AS > 
+    {T | SL} 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+     
+     
+  *************
+  *** Write ***
+  *************
+  
+  crl [issue-write] :
+    {T, issue from O to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | ops: (write(ID,K,V,TS) :: OPS), waiting: empty,
+                  replicas: R, AS > 
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (startWrite(O,ID) ; startTxn(O,ID) @ T)) >
+    < O : Coord | ops: OPS, waiting: (ID |-> none),
+                  replicas: R, AS > 
+    insertList({T | SL},(propagate write(ID,K,V,TS) from O to R[K] at T)) 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O,PAAL11,PAAL22) .
+
+  crl [ack] :
+    {T,(write(ID,K,V,TS) from O' to O)} 
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Cohort | database: DB, AS >
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Cohort | database: insert(K,< V, TS >,DB), AS > 
+    insertList({T | SL},delay-msg((reply(ID,ack) from O to O'),T)) 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [recv-ack] :
+    {T, reply(ID,ack) from O' to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < O : Coord | waiting: (ID |-> VALS),  results: RS, AS > 
+    {T | SL}
+  =>
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    {T | SL}
+    < O : Coord | waiting: TEMP, results: RS, AS >
+  if TEMP := ID |-> VALS ;; ack /\ not quorumAck(TEMP)
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  crl [commit-write] :
+    {T, reply(ID,ack) from O' to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | waiting: (ID |-> VALS),  results: RS, AS > 
+    {T | SL}
+  =>
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commitWrite(O,ID) ; commitTxn(O,ID) @ T)) >
+    {T | SL}
+    < O : Coord | waiting: empty, results: insert(ID, < done, T >, RS) , AS >
+    [0.0, issue from O to O, 0]
+  if TEMP := ID |-> VALS ;; ack /\ quorumAck(TEMP) 
+    /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O',PAAL11,PAAL22) .
+
+  --- whether there are enough ack
+  op quorumAck : Map{Id,Vals} -> Bool .
+  eq quorumAck(ID |-> ack ;; ack) = true .
+  eq quorumAck(ID |-> ack ;; ack ;; ack) = true .
+  eq quorumAck(IV) = false [owise] .
+
+  crl [silent-issue] :
+    {T, issue from O to O}
+    < injector : Injector | 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < O : Coord | ops: ept, AS > 
+    {T | SL}
+  => 
+    < injector : Injector | 
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (clientComplete(O) @ T)) >
+    < O : Coord | ops: ept, AS > 
+    {T | SL} 
+  if PAnotFault(PAFS,M3,R31,R31 + R32,T,O,O,PAAL11,PAAL22) .
+endm

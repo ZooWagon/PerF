@@ -1,0 +1,31 @@
+load apfmaude
+
+mod EVENTS is
+  inc APFMAUDE + QID .
+  
+  sorts Event Events TimedEvent TimedEvents .    
+  subsort Event < Events .
+  subsort TimedEvent < TimedEvents .
+
+  op empty : -> Events [ctor] .
+  op _,_ : Events Events -> Events [ctor assoc comm id: empty] .
+
+  op empty : -> TimedEvents [ctor] .
+  op _;_ : TimedEvents TimedEvents -> TimedEvents [ctor assoc id: empty] .
+  op _@_ : Events Float -> TimedEvent [ctor format (ni d d d)] .
+
+  op Monitor : -> ActorType .
+  op moni : -> Oid [ctor] .    *** the monitor's identifier
+  op monitor : -> Oid [ctor] .    *** the monitor's identifier
+  op Log : -> ActorType .
+  op log : -> Oid [ctor] .    *** the monitor's identifier
+  op events:_ : TimedEvents -> Attribute .
+  
+  sorts Pair EventMap .  subsort Pair < EventMap .
+  op [_,_] : Qid Events -> Pair [ctor] .
+
+  op none : -> EventMap [ctor] .
+  op _;;_ : EventMap EventMap -> EventMap [ctor comm assoc id: none] .  
+  
+  op eventMap : -> EventMap .  *** to be defined by user
+endm

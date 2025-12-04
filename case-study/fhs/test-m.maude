@@ -1,0 +1,50 @@
+load m-output/init-fhs
+
+mod TEST-M is
+
+  inc INIT-FHS .
+
+  eq VLIMIT = 10000 .
+  eq TMOLIMIT = 5.0 .
+
+  op initrun10 : -> Config .
+  eq initrun10 = run(init(10),120.0) .
+  
+  op initrun16 : -> Config .
+  eq initrun16 = run(init(16),120.0) .
+
+  var TE : TimedEvent . var TES : TimedEvents .
+  var A : Address . var B : Block . var AS : AttributeSet .
+  vars T T1 T2 : Float . var C : Config .
+  var AC : ActorConfig . var SL : ScheduleList .
+
+  op totalCommitBlock : TimedEvents -> Float .
+  eq totalCommitBlock((commit(A,B) @ T) ; TES) = 1.0 + totalCommitBlock(TES) .
+  eq totalCommitBlock((commit-p(A,B) @ T) ; TES) = 2.0 + totalCommitBlock(TES) .
+  eq totalCommitBlock(TE ; TES) = totalCommitBlock(TES) [owise] .
+  eq totalCommitBlock(empty) = 0.0 [owise]  .
+
+  op totalTime : TimedEvents -> Float .
+  op $totalTime : TimedEvents Float -> Float .
+  eq totalTime(TES) = $totalTime(TES,0.0) .
+  eq $totalTime(((commit(A,B) @ T1) ; TES), T) = $totalTime(TES, T1) .
+  eq $totalTime(((commit-p(A,B) @ T1) ; TES), T) = $totalTime(TES, T1) .
+  eq $totalTime((TE ; TES), T) = $totalTime(TES, T) [owise] .
+  eq $totalTime(empty, T) = T [owise] .
+
+  op throughput : Config -> Float .
+  eq throughput(< monitor : Monitor | events : TES > C ) = 
+    totalCommitBlock(TES) / totalTime(TES) .
+  --- eq throughput(run(< monitor : Monitor | events : TES > C,T2)) = 
+  ---   totalCommitBlock(TES) / totalTime(TES) .
+
+  op getTES : Config -> TimedEvents .
+  eq getTES(< monitor : Monitor | events : TES > C) = TES .
+
+endm
+
+---(
+rew getTES(initrun16) .
+rew result-throughput-commitblock-time(initrun16) .
+rew totalCommitBlock(getTES(initrun10)) .
+)

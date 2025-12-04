@@ -1,0 +1,701 @@
+---(
+library for fault
+based on apmaude for fault-lib
+1. fault interface
+2. fault modules: msgloss, msgdup, partition, crash, delay, equivocation
+3. fault composite module
+4. fault trans for doing f-trans
+5. fault-lib module for be included by others
+define AddressSetF, AddressListF, QidListF for fauli-lib
+2024.2.4
+)
+load apmaude
+load probability
+
+mod FAULT-INTERFACE is
+  inc APMAUDE .
+  pr PROBABILITY .
+  --- Fault Injector
+  op Evildoer : -> ActorType [ctor] .
+  op evildoer : -> Address [ctor] .
+  op Injector : -> ActorType [ctor] .
+  op injector : -> Address [ctor] .
+  sort FaultType .
+  ops nonFault ml md pa cr de ec : -> FaultType [ctor] .
+  sort FaultList .
+  subsort FaultType < FaultList .
+  op nilFL : -> FaultList .
+  op _::_ : FaultList FaultList -> FaultList [assoc id: nilFL] .
+  sort FaultFlag .
+  subsort FaultFlag < Config .
+  op faultLicense : FaultType -> FaultFlag [ctor] .
+  op faultTrigger : -> FaultFlag [ctor] .
+  op faultUpdateMood : -> FaultFlag [ctor] .
+  op nonFF : -> FaultFlag [ctor] .
+
+  op faultFlag :_ : FaultFlag -> Attribute [ctor] .
+  op faultLog :_ : ScheduleList -> Attribute [ctor] .
+  op faultMsg :_ : Config -> Attribute [ctor] .
+  op faultRegi :_ : FaultList -> Attribute [ctor] .
+
+  op nonOid : -> Address .
+  op evildoerObj : -> Actor .
+  op injectorObj : -> Actor .
+
+  --- Bool List
+  sort BoolList .
+  subsort Bool < BoolList .
+  op nilBL : -> BoolList .
+  op _::_ : BoolList BoolList -> BoolList [assoc id: nilBL].
+
+  --- Content List
+  sort ContentList .
+  subsort Content < ContentList .
+  op nilCL : -> ContentList .
+  op _::_ : ContentList ContentList -> ContentList [assoc id: nilCL] .
+
+  --- Qid List
+  inc QID .
+  sort QidListF .
+  subsort Qid < QidListF .
+  op nilQLF : -> QidListF .
+  op _^:^_ : QidListF QidListF -> QidListF [assoc id: nilQLF] .
+
+  --- debug
+  op debugFlagM : Float Float Float Float Float Float -> Content .
+  op debugFlagFT : FaultType -> Content .
+endm
+
+
+mod FAULT-MSGLOSS is
+  inc FAULT-INTERFACE .
+  op MLmood :_ : Float -> Attribute [ctor] .
+  --- lost msg
+  op MLeatMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- rate for doing ml, set by initconf
+  op MLfaultRate :_ : Float -> Attribute [ctor] .
+  --- the contents in list may suffer from msg loss
+  op MLvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- the recvers in list may suffer from msg loss
+  op MLvulnerableAddress :_ : AddressListF -> Attribute [ctor] .
+  --- a msg may lose if msgcont is in MLvulnerableContent *and* msg recv is in MLvulnerableAddress 
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R : Float .
+  var AC : ActorConfig . vars O O2 : Address .
+  var CO : Content . vars CL CL2 : ContentList .
+  vars AL AL2 : AddressListF .
+  crl [msg-loss-execute] :
+    < injector : Injector | MLmood : M, MLfaultRate : R, 
+      MLeatMsg : SL2, MLvulnerableContent : CL, 
+      MLvulnerableAddress : AL,
+      faultMsg :{ T, (CO from O to O2) }, 
+      faultFlag : faultLicense(ml), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | MLmood : rand, MLfaultRate : R,
+      MLeatMsg : (SL2 ; [T,(CO from O to O2),0]), 
+      MLvulnerableContent : CL, MLvulnerableAddress : AL,
+      faultMsg : null, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and MLisVulnerable(CO,CL,O2,AL) .
+  crl [msg-loss-absolve] :
+    < injector : Injector | MLmood : M, MLfaultRate : R, 
+      MLeatMsg : SL2, MLvulnerableContent : CL, MLvulnerableAddress : AL,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultLicense(ml), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | MLmood : rand, MLfaultRate : R,
+      MLeatMsg : SL2, MLvulnerableContent : CL, MLvulnerableAddress : AL,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and not MLisVulnerable(CO,CL,O2,AL) .
+
+  --- MLnotFault(mood,faultRate) = mood > faultRate
+  op MLnotFault : Float Float -> Bool [ctor] .
+  ceq MLnotFault(M,R) = true if M > R .
+  eq MLnotFault(M,R) = false [owise] .
+
+  op MLisVulnerable : Content ContentList Address AddressListF -> Bool .
+  eq MLisVulnerable(CO,CL,O,AL) 
+    = MLisVulnerableContent(CO,CL) and MLisVulnerableAddress(O,AL) .
+  op MLisVulnerableContent : Content ContentList -> Bool .
+  eq MLisVulnerableContent(CO,(CL :: CO :: CL2)) = true .
+  eq MLisVulnerableContent(CO,CL) = false [owise] .
+  op MLisVulnerableAddress : Address AddressListF -> Bool .
+  eq MLisVulnerableAddress(O, (AL  ^:^  O  ^:^  AL2)) = true .
+  eq MLisVulnerableAddress(O,AL) = false [owise] .
+
+endm
+
+mod FAULT-MSGDUP is
+  inc FAULT-INTERFACE .
+  op MDmood :_ : Float -> Attribute [ctor] .
+  op MDdupMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- rate for doing md, set by initconf
+  op MDfaultRate :_ : Float -> Attribute [ctor] .
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R : Float .
+  var AC : ActorConfig .
+  crl [msg-dup] :
+    < injector : Injector | MDmood : M, MDfaultRate : R, 
+      MDdupMsg : SL2, faultMsg : { T, MSG }, 
+      faultFlag : faultLicense(md), AS >
+    AC {T | SL} faultTrigger
+    =>
+    < injector : Injector | MDmood : rand, MDfaultRate : R,
+      MDdupMsg : (SL2 ; [T,MSG,0]), faultMsg : { T, MSG }, 
+      faultFlag : faultUpdateMood, AS >
+    AC {T | insert(SL,[T + 2.71828,MSG,0])} faultUpdateMood
+    if M <= R .
+  
+  --- MDnotFault(mood,faultRate) = mood > faultRate
+  op MDnotFault : Float Float -> Bool [ctor] .
+  ceq MDnotFault(M,R) = true if M > R .
+  eq MDnotFault(M,R) = false [owise] .
+endm
+
+mod FAULT-PARTITION is
+  inc FAULT-INTERFACE .
+  sort PAFaultStatus .
+  ops standby cutting recovered : -> PAFaultStatus [ctor] .
+  sort Partition .
+  ops _:|:_ : AddressListF AddressListF -> Partition [ctor] .
+
+  op PAstatus :_ : PAFaultStatus -> Attribute [ctor] .
+  op PAallActors :_ : AddressListF -> Attribute [ctor] .
+  op PApart :_ : Partition -> Attribute [ctor] .
+  op PAcutMsg :_ : ScheduleList -> Attribute [ctor] .
+  op PAmood :_ : Float -> Attribute [ctor] .
+  --- rate for partition, set by initconf, not use
+  op PApartRate :_ : Float -> Attribute [ctor] .
+  --- rate for recovery, set by initconf, not use
+  op PArecoRate :_ : Float -> Attribute [ctor] .
+  --- partition duration time
+  op PAdurationTime :_ : Float -> Attribute [ctor] .
+  --- partition occur time
+  op PAoccurTime :_ : Float -> Attribute [ctor] .
+
+
+  vars SL SL2 : ScheduleList .
+  vars AS1 AS2 : AttributeSet . vars AL1 AL2 AL : AddressListF .
+  vars O O1 O2 : Address . var MP : Content . var FS : PAFaultStatus .
+  vars T M R R2 TP TO : Float . var PA : Partition .
+  var AC : ActorConfig . var AM : ActiveMsg .
+  crl [make-part-random-part] :
+    < injector : Injector | PAstatus : standby, PAoccurTime : TO,
+        PApart : (nilALF :|: nilALF), PAallActors : AL, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : cutting, PAoccurTime : TO,
+        PApart : devideAddresses(AL,0.9,(nilALF :|: nilALF)), 
+        PAallActors : AL, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if TO <= T .
+  crl [make-part-predefined-part] :
+    < injector : Injector | PAstatus : standby, PAoccurTime : TO,
+        PApart : (AL1 :|: AL2), PAallActors : AL, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : cutting, PAoccurTime : TO,
+        PApart : (AL1 :|: AL2), PAallActors : AL, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if TO <= T /\ AL1 =/= nilALF /\ AL2 =/= nilALF .
+  crl [cut-part] :
+    < injector : Injector | PAstatus : cutting, PAmood : M,
+        PApart : (AL1 :|: AL2), PAcutMsg : SL2, PAoccurTime : TO, PAdurationTime : TP,
+        faultMsg : {T, (MP from O2 to O1)}, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  => 
+    < injector : Injector | PAstatus : cutting, PAmood : rand,
+        PApart : (AL1 :|: AL2), PAcutMsg : (SL2 ; [T,(MP from O2 to O1),0]),
+        PAoccurTime : TO, PAdurationTime : TP,
+        faultMsg : null, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if isCut(O1,O2,AL1,AL2) /\ (TO + TP) > T .
+  crl [recover] :
+    < injector : Injector | PAstatus : cutting, PAmood : M, 
+      PAoccurTime : TO, PAdurationTime : TP, faultFlag : faultLicense(pa), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | PAstatus : recovered, PAmood : rand, 
+      PAoccurTime : TO, PAdurationTime : TP, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if (TO + TP) <= T .
+
+  --- devide Addresses to 2 non-empty Addresses
+  --- rew devideAddresses((server ; client(0) ; client(1) ; client(2)),0.9,(empty :|: empty)) .
+  op devideAddresses : AddressListF Float Partition -> Partition .
+  ceq devideAddresses((O ^:^ AL),R,(AL1 :|: AL2)) = devideAddresses(AL,rand,((O ^:^ AL1) :|: AL2)) 
+      if R >= 0.5 [owise] .
+  ceq devideAddresses((O ^:^ AL),R,(AL1 :|: AL2)) = devideAddresses(AL,rand,(AL1 :|: (O ^:^ AL2)))
+      if R < 0.5 [owise] .
+  eq devideAddresses(O,R,(nilALF :|: AL2)) = devideAddresses(nilALF,rand,(O :|: AL2)) .
+  eq devideAddresses(O,R,(AL1 :|: nilALF)) = devideAddresses(nilALF,rand,(AL1 :|: O)) .
+  eq devideAddresses(nilALF,R,PA) = PA .
+
+  --- if (O1 in AL1 and O2 in AL2) or (O2 in AL1 and O1 in AL2), then true
+  op isCut : Address Address AddressListF AddressListF -> Bool [ctor] .
+  op isCutRec : Address Address AddressListF AddressListF -> Bool [ctor] .
+  eq isCut(O1,O2,AL1,AL2) = 
+      (isInAddresses(O1,AL1) and isInAddresses(O2,AL2))
+      or (isInAddresses(O1,AL2) and isInAddresses(O2,AL1)) .
+  op isInAddresses : Address AddressListF -> Bool [ctor] .
+  eq isInAddresses(O1, (AL1 ^:^ O1 ^:^ AL2)) = true .
+  eq isInAddresses(O1, AL1) = false [owise] .
+
+  --- whether rules in target module can go on, not fault point
+  --- PAnotFault(PAFaultStatus, mood, PAoccurTime, PArecoveryTime, curGlobalTime, SrcOid, DstOid, partAL1, partAL2)
+  op PAnotFault : PAFaultStatus Float Float Float Float Address Address AddressListF AddressListF -> Bool [ctor] .
+  ceq PAnotFault(standby,M,R,R2,T,O1,O2,AL1,AL2) = true if R > T .
+  --- not need recovery (recoveryTime > curTime) /\ not cut
+  ceq PAnotFault(cutting,M,R,R2,T,O1,O2,AL1,AL2) = true if R2 > T and not isCut(O1,O2,AL1,AL2) .
+  eq PAnotFault(recovered,M,R,R2,T,O1,O2,AL1,AL2) = true .
+  eq PAnotFault(FS,M,R,R2,T,O1,O2,AL1,AL2) = false [owise] .
+endm
+
+mod FAULT-CRASH is
+  inc FAULT-INTERFACE .
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  vars AS AS1 AS2 : AttributeSet . vars AL1 AL2 : AddressListF .
+  vars O O1 O2 : Address . var MP : Content . var FS : CRFaultStatus .
+  vars T F M R R2 : Float . vars C C2 : Config . var AT : ActorType . 
+  var AC : ActorConfig . var AM : ActiveMsg . 
+  var CON : Content . vars CL1 CL2 : ContentList .
+
+  sort CRFaultStatus .
+  ops standby crashing rebooted : -> CRFaultStatus [ctor] .
+  op CRstatus :_ : CRFaultStatus -> Attribute [ctor] .
+
+  sort DictConfig .
+  op _=-=_ : Address Config -> DictConfig [ctor] .
+  op null : -> DictConfig .
+  op _;_ : DictConfig DictConfig -> DictConfig [assoc comm id: null] .
+  --- make Config to DictoryConfig
+  op CRmakeDictConfig : Config DictConfig -> DictConfig [ctor] .
+  var DC : DictConfig .
+  eq CRmakeDictConfig((< O : AT | AS > C),((O =-= C2) ; DC)) = 
+      CRmakeDictConfig(C,((O =-= (C2 < O : AT | AS >)) ; DC)) .
+  eq CRmakeDictConfig((< O : AT | AS > C),DC) = 
+      CRmakeDictConfig(C,((O =-= (< O : AT | AS >)) ; DC)) [owise] .
+  eq CRmakeDictConfig(({T, (MP from O2 to O)} C),((O =-= C2) ; DC)) = 
+      CRmakeDictConfig(C,((O =-= (C2 {T, (MP from O2 to O)})) ; DC)) .
+  eq CRmakeDictConfig(({T, (MP from O2 to O)} C),DC) = 
+      CRmakeDictConfig(C,((O =-= {T, (MP from O2 to O)}) ; DC)) [owise] .
+  eq CRmakeDictConfig(null,DC) = DC [owise] .
+
+  --- init state snap, for reboot
+  op CRinitStore :_ : DictConfig -> Attribute [ctor] .
+  --- vulnerable objs, which can crash
+  op CRvulnerableObjs :_ : AddressListF -> Attribute [ctor] .
+  --- vulnerable content, may cause crash
+  op CRvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- current crashing obj
+  op CRcrashingObj :_ : Address -> Attribute [ctor] .
+  --- record last crashed obj
+  op CRcrashingObjRecord :_ : Address -> Attribute [ctor] .
+  --- msgs cut during crash
+  op CRcutMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- CR mood
+  op CRmood :_ : Float -> Attribute [ctor] .
+  --- rate for crash, set by initconf
+  op CRcrashRate :_ : Float -> Attribute [ctor] .
+  --- rate for reboot, set by initconf
+  op CRrebootRate :_ : Float -> Attribute [ctor] .
+
+  --- crash an obj
+  crl [make-crash] :
+    < injector : Injector | CRstatus : standby, CRmood : M, CRcrashRate : R,
+      CRvulnerableObjs : AL1, CRcrashingObj : O2, faultFlag : faultLicense(cr), AS1 >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | CRstatus : crashing, CRmood : rand, CRcrashRate : R,
+      CRvulnerableObjs : AL1, CRcrashingObj : selectCrushObj(AL1,0.0,rand,nullAddr),
+      faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M <= R .
+  --- a crashing node can't recv msg, so cut
+  crl [cut-crash] :
+    < injector : Injector | CRstatus : crashing, CRmood : M, CRrebootRate : R,
+      CRcutMsg : SL2, CRcrashingObj : O1,
+      faultMsg : { T, (MP from O2 to O1)}, faultFlag : faultLicense(cr), AS1 >
+    AC {T | SL} faultTrigger
+  => 
+    < injector : Injector | CRstatus : crashing, CRmood : rand, CRrebootRate : R,
+      CRcutMsg : (SL2 ; [T,(MP from O2 to O1),0]), CRcrashingObj : O1,
+      faultMsg : null, faultFlag : faultUpdateMood, AS1 >
+    AC {T | SL} faultUpdateMood
+  if M > R .
+  crl [reboot] :
+    < injector : Injector | CRstatus : crashing, CRcrashingObj : O,
+      CRmood : M, CRrebootRate : R, CRcrashingObjRecord : O1,
+      CRinitStore : ((O =-= C) ; DC), faultMsg : { T, MSG },
+      faultFlag : faultLicense(cr), AS1 >
+    < O : AT | AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | CRstatus : rebooted, CRcrashingObj : nullAddr,
+      CRmood : rand, CRrebootRate : R, CRcrashingObjRecord : O,
+      CRinitStore : ((O =-= C) ; DC), faultMsg : rebootConfigMsg(C, T),
+      faultFlag : faultUpdateMood, AS1 >
+    AC rebootConfigActor(C) {T | insert(SL,[T + 2.71828,MSG,0])} faultUpdateMood
+  if M <= R .
+
+  --- select crash Obj from vulnerableObjs
+  --- selectCrushObj(vulnerableObjs,highestScore,currentScore,crashObj)
+  op selectCrushObj : AddressListF Float Float Address -> Address [ctor] .
+  ceq selectCrushObj((O ^:^ AL1),R,R2,O2) = selectCrushObj(AL1,R2,rand,O)
+    if R2 > R [owise] .
+  ceq selectCrushObj((O ^:^ AL1),R,R2,O2) = selectCrushObj(AL1,R,rand,O2)
+    if R2 <= R [owise] .
+  eq selectCrushObj(nilALF,R,R2,O2) = O2 .
+
+  --- reboot config with actor
+  op rebootConfigActor : Config -> Config .
+  eq rebootConfigActor(null) = null .
+  eq rebootConfigActor({F, MSG}) = null .
+  eq rebootConfigActor(AC C) = AC rebootConfigActor(C) [owise] .
+
+  --- reboot config with msg
+  op rebootConfigMsg : Config Float -> Config .
+  eq rebootConfigMsg(null, T) = null .
+  eq rebootConfigMsg({F, MSG}, T) = {T, MSG} .
+  eq rebootConfigMsg(AC C, T) = rebootConfigMsg(C,T) [owise] .
+
+  --- whether trigger crash fault
+  --- CRnotFault(FaultStatus, mood, crashRate, rebootRate, 
+  ---      crashAddress, DstAddress, curContent, vulnerableContentList)
+  op CRnotFault : CRFaultStatus Float Float Float Address Address Content ContentList -> Bool [ctor] .
+  ceq CRnotFault(standby,M,R,R2,O,O2,CON,CL1) = true if M > R or not CRisContentVulnerable(CON,CL1) .
+  ceq CRnotFault(crashing,M,R,R2,O,O2,CON,CL1) = true if M > R2 and O =/= O2 .
+  eq CRnotFault(rebooted,M,R,R2,O,O2,CON,CL1) = true .
+  eq CRnotFault(FS,M,R,R2,O,O2,CON,CL1) = false [owise] .
+
+  --- whether content is vulnerable
+  op CRisContentVulnerable : Content ContentList -> Bool [ctor] .
+  eq CRisContentVulnerable(CON, (CL1 :: CON :: CL2)) = true .
+  eq CRisContentVulnerable(CON,CL1) = false [owise] .
+
+endm
+
+mod FAULT-DELAY is
+  inc FAULT-INTERFACE .
+  --- abbr. DE
+
+  op DEmood :_ : Float -> Attribute [ctor] .
+  --- delayed msg
+  op DEdelayedMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- delay time of delayed msg, set by fault input
+  op DEtime :_ : Float -> Attribute [ctor] .
+  --- rate for doing delay, set by fault input
+  op DEfaultRate :_ : Float -> Attribute [ctor] .
+  --- the contents in list may suffer from delay
+  op DEvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- the recvers in list may suffer from delay
+  op DEvulnerableRecv :_ : AddressListF -> Attribute [ctor] .
+  --- the src in list may suffer from delay
+  op DEvulnerableSrc :_ : AddressListF -> Attribute [ctor] .
+  --- the rule in list may suffer from delay
+  op DEvulnerableRule :_ : QidListF -> Attribute [ctor] .
+
+  
+---(
+  1. arbitrary delay with rate
+    may delay if M <= R (rate)
+    set DEvulnerableRule : nilQLF
+  2. by src and/or recv and/or content with rate
+    may delay if src, recv, content are matched
+    set DEvulnerableRule : nilQLF
+  3. by rule name with rate 1.0
+    may delay if rule name are matched
+    set DEvulnerableRule : {rule name}
+)
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R DT : Float .
+  var AC : ActorConfig . vars O O1 O2 : Address .
+  var CO : Content . vars CL CL2 : ContentList .
+  vars AL AL1 AL2 : AddressListF .
+  crl [delay-execute] :
+    < injector : Injector | DEmood : M, DEfaultRate : R, 
+      DEdelayedMsg : SL2, DEvulnerableContent : CL, 
+      DEvulnerableSrc : AL1, DEvulnerableRecv : AL2,
+      DEtime : DT,
+      faultMsg :{ T, (CO from O to O2) }, 
+      faultFlag : faultLicense(de), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | DEmood : rand, DEfaultRate : R,
+      DEdelayedMsg : (SL2 ; [T,(CO from O to O2),0]), 
+      DEvulnerableContent : CL, 
+      DEvulnerableSrc : AL1, DEvulnerableRecv : AL2,
+      DEtime : DT,
+      faultMsg : null, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | insert(SL,[T + DT, (CO from O to O2), 0])}
+  if M <= R and DEisVulnerable(CO,CL,O,AL1,O2,AL2) .
+  crl [delay-absolve] :
+    < injector : Injector | DEmood : M, DEfaultRate : R, 
+      DEdelayedMsg : SL2, DEvulnerableContent : CL, 
+      DEvulnerableSrc : AL1, DEvulnerableRecv : AL2,
+      DEtime : DT,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultLicense(de), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | DEmood : rand, DEfaultRate : R,
+      DEdelayedMsg : SL2, DEvulnerableContent : CL, 
+      DEvulnerableSrc : AL1, DEvulnerableRecv : AL2,
+      DEtime : DT,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and not DEisVulnerable(CO,CL,O,AL1,O2,AL2) .
+
+  --- DEnotFault(mood,faultRate) = mood > faultRate
+  op DEnotFault : Float Float -> Bool [ctor] .
+  ceq DEnotFault(M,R) = true if M > R .
+  eq DEnotFault(M,R) = false [owise] .
+
+  --- judge whether src, recv, content is vulnerable
+  op DEisVulnerable : Content ContentList Address AddressListF Address AddressListF -> Bool .
+  eq DEisVulnerable(CO,CL,O1,AL1,O2,AL2) 
+    = DEisVulnerableContent(CO,CL) and 
+      DEisVulnerableAddress(O1,AL1) and 
+      DEisVulnerableAddress(O2,AL2) .
+  --- judge whether CO is in CL. If CL is nil, true immediately.
+  op DEisVulnerableContent : Content ContentList -> Bool .
+  eq DEisVulnerableContent(CO,(CL :: CO :: CL2)) = true .
+  eq DEisVulnerableContent(CO,nilCL) = true .
+  eq DEisVulnerableContent(CO,CL) = false [owise] .
+  --- judge whether O is in AL IF AL is nil, true immediately.
+  op DEisVulnerableAddress : Address AddressListF -> Bool .
+  eq DEisVulnerableAddress(O, (AL1 ^:^ O ^:^ AL2)) = true .
+  eq DEisVulnerableAddress(O, nilALF) = true .
+  eq DEisVulnerableAddress(O,AL1) = false [owise] .
+
+endm
+
+mod FAULT-EQUIVOCATION is
+  --- abbr. ec
+  inc FAULT-INTERFACE .
+
+  --- evil sender
+  op ECevilSrc :_ : AddressListF -> Attribute .
+  --- equivocate content
+  op ECequivocateContent :_ : ContentEquivocatePairList -> Attribute .
+  --- suffered msg
+  op ECsufferedMsg :_ : ScheduleList -> Attribute .
+
+  sorts ContentEquivocatePair ContentEquivocatePairList .
+  subsort ContentEquivocatePair < ContentEquivocatePairList .
+  op [_|_,_] : Content Content Nat -> ContentEquivocatePair [ctor] .
+  op nilCEPL : -> ContentEquivocatePairList .
+  op _::_ : ContentEquivocatePairList ContentEquivocatePairList -> ContentEquivocatePairList [assoc id: nilCEPL] .
+
+  vars CO CO1 CO2 : Content . vars A1 A2 : Address .
+  vars AL1 AL2 : AddressListF . vars CEPL1 CEPL2 : ContentEquivocatePairList .
+  vars EN : Nat .
+  vars SL SL1 SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R DT : Float .
+  var AC : ActorConfig .
+
+  rl [equivocate] :
+    < injector : Injector | 
+      ECsufferedMsg : SL1,
+      ECevilSrc : AL1,
+      ECequivocateContent : (CEPL1 :: [CO | CO2, EN] :: CEPL2),
+      faultMsg :{ T, (CO from A1 to A2) }, 
+      faultFlag : faultLicense(ec), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | 
+      ECsufferedMsg : (SL1 ; [T, CO from A1 to A2, 0]),
+      ECevilSrc : AL1,
+      ECequivocateContent : (CEPL1 :: [CO | CO2, sd(EN,1)] :: CEPL2),
+      faultMsg :{ T, (CO2 from A1 to A2) }, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL} .
+
+  --- ECnotFault(curMsg, evil sender, equivocate content)
+  op ECnotFault : ActiveMsg AddressListF ContentEquivocatePairList -> Bool .
+  ceq ECnotFault({T, CO from A1 to A2}, 
+    (AL1 ^:^ A1 ^:^ AL2), (CEPL1 :: [CO | CO2, EN] :: CEPL2))
+    = false if EN > 0 .
+  eq ECnotFault({T, CO from A1 to A2}, AL1, CEPL1) = true [owise] .
+
+endm
+
+
+mod FAULT-COMPOSITE is
+  inc FAULT-MSGLOSS .
+  inc FAULT-MSGDUP .
+  inc FAULT-PARTITION .
+  inc FAULT-CRASH .
+  inc FAULT-DELAY .
+  inc FAULT-EQUIVOCATION .
+
+  vars M1 M2 M3 M4 M5 M6 R1 R2 R31 R32 R41 R42 R5 T : Float .
+  var FL : FaultList . vars FT FT2 : FaultType .
+  var AS : AttributeSet .
+  var PAAL11 PAAL22 : AddressListF . var PAFS : PAFaultStatus .
+  vars SL SL2 : ScheduleList . vars O1 O2 : Address . var MP : Content .
+  var CRFS : CRFaultStatus . vars CrashOid : Address . var CRVCL : ContentList .
+  var AC : ActorConfig . var MSG : Msg . var AM : ActiveMsg .
+  var ECECO : ContentEquivocatePairList . var ECAL : AddressListF .
+  crl [make-fault-license] :
+  < injector : Injector | 
+    MLmood : M1, MLfaultRate : R1, 
+    MDmood : M2, MDfaultRate : R2,
+    PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+      PAoccurTime : R31, PAdurationTime : R32,
+    CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid, CRvulnerableContent : CRVCL,
+      CRcrashRate : R41, CRrebootRate : R42,
+    DEmood : M5, DEfaultRate : R5,
+    ECevilSrc : ECAL, ECequivocateContent : ECECO,
+    faultLog : SL2,
+    faultRegi : FL,
+    faultMsg : null, 
+    faultFlag : nonFF, AS > 
+    {T, (MP from O2 to O1)} AC {T | SL}
+  =>
+  < injector : Injector | 
+    MLmood : M1, MLfaultRate : R1, 
+    MDmood : M2, MDfaultRate : R2,
+    PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+      PAoccurTime : R31, PAdurationTime : R32,
+    CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid,  CRvulnerableContent : CRVCL,
+      CRcrashRate : R41, CRrebootRate : R42,
+    DEmood : M5, DEfaultRate : R5,
+    ECevilSrc : ECAL, ECequivocateContent : ECECO,
+    faultLog : (SL2 ; [T,(debugFlagM(M1,M2,M3,M4,M5,0.0) to injector),0]),
+    faultRegi : FL,
+    faultMsg : {T, (MP from O2 to O1)}, 
+    faultFlag : genefaultLicense(
+      geneFaultList((nonFault :: FL),(false
+          :: (not MLnotFault(M1,R1)) 
+          :: (not MDnotFault(M2,R2)) 
+          :: (not PAnotFault(PAFS,M3,R31,R31 + R32,T,O1,O2,PAAL11,PAAL22))
+          :: (not CRnotFault(CRFS,M4,R41,R42,CrashOid,O1,MP,CRVCL))
+          :: (not DEnotFault(M5,R5)) 
+          :: (not ECnotFault({T, (MP from O2 to O1)},ECAL,ECECO))
+          )),0.0,rand,nonFault),
+    AS > 
+    AC {T | SL} faultTrigger
+  if false
+    or not MLnotFault(M1,R1)
+    or not MDnotFault(M2,R2)
+    or not PAnotFault(PAFS,M3,R31,R31 + R32,T,O1,O2,PAAL11,PAAL22) 
+    or not CRnotFault(CRFS,M4,R41,R42,CrashOid,O1,MP,CRVCL) 
+    or not DEnotFault(M5,R5)
+    or not ECnotFault({T, (MP from O2 to O1)},ECAL,ECECO)
+    or false .
+  rl [fault-update-mood] :
+    < injector : Injector | 
+      MLmood : M1, 
+      MDmood : M2, 
+      PAmood : M3, 
+      CRmood : M4,
+      DEmood : M5,
+      faultMsg : {T, MSG}, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+      MLmood : 0.9999, 
+      MDmood : 0.9999,
+      PAmood : 0.9999, 
+      CRmood : 0.9999,
+      DEmood : 0.9999,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    {T, MSG} AC {T | SL} .
+  rl [fault-update-mood-2] :
+    < injector : Injector | 
+      MLmood : M1, 
+      MDmood : M2, 
+      PAmood : M3, 
+      CRmood : M4,
+      DEmood : M5,
+      faultMsg : null, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+      MLmood : rand, 
+      MDmood : rand,
+      PAmood : rand, 
+      CRmood : rand,
+      DEmood : rand,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    AC {T | SL} .
+
+  --- geneFaultList(FL,BL)
+  --- generate an FaultList, extract FL for according Bool in BL is true  
+  var BL : BoolList . var B : Bool .
+  op geneFaultList : FaultList BoolList -> FaultList [ctor] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = FT :: geneFaultList(FL,BL)
+    if B [owise] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = geneFaultList(FL,BL)
+    if not B [owise] .
+  eq geneFaultList(nilFL,nilBL) = nilFL .
+  --- generate faultLicense from FaultList, indicating FT be selected
+  --- genefaultLicense(FaultList,highestScore,currentScore,FaultType)
+  op genefaultLicense : FaultList Float Float FaultType -> FaultFlag [ctor] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R2,rand,FT)
+    if R2 > R1 [owise] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R1,rand,FT2)
+    if R2 <= R1 [owise] .
+  eq genefaultLicense(nilFL,R1,R2,FT) = faultLicense(FT) .
+endm
+
+mod FAULT-LIB is 
+  inc FAULT-COMPOSITE .
+endm
+
+mod FAULT-TRANS is 
+  inc FAULT-COMPOSITE .
+  
+  var T : Float .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 M5 R1 R2 R31 R32 R41 R42 R5 : Float .
+  var ASFAULT : AttributeSet .
+  var MLVULCL : ContentList . var MLVULAL : AddressListF .
+  var PAFS : PAFaultStatus . vars PAAL11 PAAL22 : AddressListF .
+  var CRFS : CRFaultStatus . vars CrashOid : Address . var CRVCL : ContentList .
+  var ECAL : AddressListF . var ECECO : ContentEquivocatePairList .
+
+  crl [f-trans-ele]:
+    {T, (CON from SRCO to DSTO)}
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULAL,
+      MDmood : M2, MDfaultRate : R2, 
+      PAmood : M3, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      CRmood : M4, CRstatus : CRFS, CRcrashingObj : CrashOid, CRvulnerableContent : CRVCL,
+        CRcrashRate : R41, CRrebootRate : R42,
+      DEmood : M5, DEfaultRate : R5,
+      ECevilSrc : ECAL, ECequivocateContent : ECECO,
+      ASFAULT >
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULAL,
+      MDmood : rand, MDfaultRate : R2,
+      PAmood : rand, PAstatus : PAFS, PApart : (PAAL11 :|: PAAL22), 
+        PAoccurTime : R31, PAdurationTime : R32,
+      CRmood : rand, CRstatus : CRFS, CRcrashingObj : CrashOid, CRvulnerableContent : CRVCL,
+        CRcrashRate : R41, CRrebootRate : R42,
+      DEmood : rand, DEfaultRate : R5,
+      ECevilSrc : ECAL, ECequivocateContent : ECECO,
+      ASFAULT >
+    if 
+      MLnotFault(M1,R1)
+      /\ MDnotFault(M2,R2)
+      /\ PAnotFault(PAFS,M3,R31,R31 + R32,T,DSTO,SRCO,PAAL11,PAAL22)
+      /\ CRnotFault(CRFS,M4,R41,R42,CrashOid,DSTO,CON,CRVCL)
+      /\ DEnotFault(M5,R5) 
+      /\ ECnotFault({T, (CON from SRCO to DSTO)},ECAL,ECECO) .
+endm

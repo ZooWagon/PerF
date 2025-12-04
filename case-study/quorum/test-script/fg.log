@@ -1,0 +1,23 @@
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Mon Sep 29 15:22:55 2025
+Maude> ==========================================
+rewrite in TEST-M : throughput(initrun) .
+rewrites: 12491081 in 3218ms cpu (3220ms real) (3881628 rewrites/second)
+result FiniteFloat: 3.6061228821227229e+2
+==========================================
+rewrite in TEST-M : totalTxn(initrun) .
+rewrites: 6253073 in 1704ms cpu (1703ms real) (3669643 rewrites/second)
+result FiniteFloat: 4.0e+2
+==========================================
+rewrite in TEST-M : totalReadTxn(initrun) .
+rewrites: 6195185 in 1896ms cpu (1932ms real) (3267502 rewrites/second)
+result FiniteFloat: 2.69e+2
+==========================================
+rewrite in TEST-M : totalFailTxn(initrun) .
+rewrites: 6292980 in 1898ms cpu (1904ms real) (3315584 rewrites/second)
+result FiniteFloat: 6.1e+1
+Maude> Bye.

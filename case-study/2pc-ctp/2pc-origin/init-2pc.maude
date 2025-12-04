@@ -1,0 +1,38 @@
+---(
+2PC-origin
+quantitative model, origin apmaude
+2024.3.13
+)
+set show advisories off .
+load 2pc
+
+mod INIT-2PC is
+
+  inc 2PC .
+  inc NAT .
+  op init : Nat -> Config .
+  op init : Nat AddressList -> Config .
+  var N : Nat .  var AL : AddressList .
+  var C : Config .
+  eq init(N) = init(N, nilAL) .
+  eq init(0, AL) = init-coord(AL) .
+  eq init(s N, AL) = init-cohort(N) init(N, (cohort(N) ; AL)) .
+
+  op init-cohort : Nat -> Actor .
+  eq init-cohort(N) = < cohort(N) : Cohort | txnStateRecord : nullTS > .
+
+  op init-coord : AddressList -> Actor .
+  eq init-coord(AL) = 
+    < coord : Coord | txnIdIter : 1, txnReplyRecord : nullTR, 
+      cohorts : AL, txnStateRecord : nullTS > .
+  
+  op initconf : -> Config .
+  eq initconf = init(3) < scheduler : Scheduler | clock : 0.0, scheduledMsg : nilSL >
+     {0.0, (TriggerTxn from coord to coord)} .
+
+endm
+
+set clear rules off .
+---(
+
+)

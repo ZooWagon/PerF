@@ -1,0 +1,35 @@
+load fhs
+
+mod INIT-FHS is
+  inc FHS .
+
+  op init : Nat -> Config .
+  op $init : Nat Nat -> Config .
+
+  vars N M : Nat .
+  
+  eq init(N) = $init(N,N) 
+    < injector : Injector | TPevilSrc : 3, TPtemperContent : ( [prepare([[Bparent : 2, Bview : 3, Bqc : << QCtype : highQC, QCview : 2, QCsign : 3 >>]]) | prepare([[Bparent : 1, Bview : 3, Bqc : << QCtype : highQC, QCview : 1, QCsign : 3 >>]])] :: [prepare([[Bparent : 6, Bview : 7, Bqc : << QCtype : highQC, QCview : 6, QCsign : 3 >>]]) | prepare([[Bparent : 5, Bview : 7, Bqc : << QCtype : highQC, QCview : 5, QCsign : 3 >>]])]), TPsufferedMsg : nil, faultLog : nil, faultRegi : (tp), faultMsg : null, faultFlag : nonFF > .
+  eq $init(N,s M) = 
+    < M : Replica | nodeNum : N, nodeF : (N quo 3), 
+      nodeOther : geneOtherNode(N,M), tmoQC : nullQC, tmoV : 0,
+      curView : 0, recvNextView : nilQCL, recvVote : nilQCL, newView : 0,
+      commitBlock : nilBL, recvBlock : nilBL, proposedBlock : nilBL >
+    $init(N,M) .
+  eq $init(N,0) = insertList({0.0 | nil}, propagate trigger from 0 to geneOtherNode(N,0) ^;^ 0 at 0.0) .
+
+  --- geneOtherNode(allNum, myNum)
+  op geneOtherNode : Nat Nat -> AddressSetF .
+  ceq geneOtherNode(s N,M) = N ^;^ geneOtherNode(N,M) if N =/= M .
+  eq geneOtherNode(s N,N) = geneOtherNode(N,N) .
+  eq geneOtherNode(0,M) = nullASF .
+
+  eq VLIMIT = 25 .
+  eq TMOLIMIT = 5.0 .
+
+  op initrun : -> Config .
+  eq initrun = run(init(4),120.0) .
+
+endm
+
+set clear rules off .

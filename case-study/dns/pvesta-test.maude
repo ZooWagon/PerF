@@ -1,0 +1,7 @@
+load f-output/init-dns
+
+mod PVESTA-TEST is
+
+    inc INIT-DNS .
+
+endm

@@ -1,0 +1,66 @@
+--- quorum, ta
+load quorum
+
+mod INIT-QUORUM is
+  inc QUORUM .
+  
+  ops c1 c2 c3 c4 s1 s2 s3 : -> Address [ctor] . 
+  ops k1 k2 k3 k4 : -> Key [ctor] .
+   
+  op OPSLIMIT : -> Nat .
+  eq OPSLIMIT = 20 .
+   
+  op initex : -> Config .
+  eq initex =
+     < c1 : Coord | ops: read(1,k1,6.0), waiting: empty, results: empty,
+                    replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3)) >
+     < c2 : Coord | ops: read(2,k2,11.0), waiting: empty, results: empty,
+                     replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3)) >
+     < c3 : Coord | ops: write(3,k1,52,9.0), waiting: empty, results: empty,
+                     replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3)) >
+     < c4 : Coord | ops: (write(4,k2,19,7.0) :: write(5,k1,65,11.0)), waiting: empty, results: empty,
+                     replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3)) >
+     < s1 : Cohort | database: (k1 |-> < 23, 1.0 >, k2 |-> < 8, 4.0 >) >     
+     < s2 : Cohort | database: (k1 |-> < 10, 5.0 >, k2 |-> < 7, 3.0 >) >
+     < s3 : Cohort | database: (k1 |-> < 14, 2.0 >, k2 |-> < 3, 6.0 >) > 
+     { 0.0 | 
+      [6.0, issue from c1 to c1, 0] ; 
+      [7.0, issue from c4 to c4, 0] ; 
+      [9.0, issue from c3 to c3, 0] ; 
+      [11.0, issue from c2 to c2, 0]} .
+
+  op initconf : -> Config .
+  
+  eq initconf = < c1 : Coord | ops: geneOps(OPSLIMIT,1), waiting: empty, results: empty, replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3), k3 |-> (s1 ^;^ s2 ^;^ s3), k4 |-> (s1 ^;^ s2 ^;^ s3)) > < c2 : Coord | ops: geneOps(OPSLIMIT,2), waiting: empty, results: empty, replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3), k3 |-> (s1 ^;^ s2 ^;^ s3), k4 |-> (s1 ^;^ s2 ^;^ s3)) > < c3 : Coord | ops: geneOps(OPSLIMIT,3), waiting: empty, results: empty, replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3), k3 |-> (s1 ^;^ s2 ^;^ s3), k4 |-> (s1 ^;^ s2 ^;^ s3)) > < c4 : Coord | ops: geneOps(OPSLIMIT,4), waiting: empty, results: empty, replicas: (k1 |-> (s1 ^;^ s2 ^;^ s3), k2 |-> (s1 ^;^ s2 ^;^ s3), k3 |-> (s1 ^;^ s2 ^;^ s3), k4 |-> (s1 ^;^ s2 ^;^ s3)) > < s1 : Cohort | database: (k1 |-> < 0, 0.001 >, k2 |-> < 0, 0.001 >, k3 |-> < 0, 0.001 >, k4 |-> < 0, 0.001 >) > < s2 : Cohort | database: (k1 |-> < 0, 0.002 >, k2 |-> < 0, 0.002 >, k3 |-> < 0, 0.001 >, k4 |-> < 0, 0.001 >) > < s3 : Cohort | database: (k1 |-> < 0, 0.003 >, k2 |-> < 0, 0.003 >, k3 |-> < 0, 0.001 >, k4 |-> < 0, 0.001 >) > { 0.0 | [0.01, issue from c1 to c1, 0] ; [0.02, issue from c2 to c2, 0] ; [0.03, issue from c3 to c3, 0] ; [0.04, issue from c4 to c4, 0]} 
+    < injector : Injector | PAstatus : standby, PAoccurTime : 10.0, PAdurationTime : 25.0, PAmood : rand, PAcutMsg : nil, PAallActors : (c1 ^:^ c2 ^:^ c3 ^:^ c4 ^:^ s1 ^:^ s2 ^:^ s3), PApart : (c1 ^:^ c2 ^:^ c3 ^:^ c4 ^:^ s1 ^:^ s2 :|: s3), faultLog : nil, faultRegi : (pa), faultMsg : null, faultFlag : nonFF > .
+
+  var N M : Nat . var F : Float .
+  --- geneOps(number of ops, client code)
+  op geneOps : Nat Nat -> Operations .
+  eq geneOps(s N,M) = geneOps(N,M) :: if rand <= 0.5 then geneReadOp(s N) else geneWriteOp(s N,M) fi .
+  eq geneOps(0,M) = ept .
+
+  --- geneReadOp(op_id)
+  op geneReadOp : Nat -> Operation .
+  eq geneReadOp(N) = read(N,geneKeyRand(rand),0.0) .
+  --- geneWriteOp(op_id, client code)
+  op geneWriteOp : Nat Nat -> Operation .
+  eq geneWriteOp(N, M) = write(N,geneKeyRand(rand),N + M * 1000,0.0) .
+  --- geneKeyRand(rand)
+  op geneKeyRand : Float -> Key .
+  eq geneKeyRand(F) = 
+    if F <= 0.25 then k1 
+    else if F <= 0.5 then k2 
+    else if F <= 0.75 then k4
+    else k4 fi
+    fi fi .
+
+  op initrun : -> Config .
+  eq initrun = run(initconf,100.0) .
+endm
+
+--- set clear rules off .
+
+--- rew initconf .
+
+---search initconf =>! C:Config .

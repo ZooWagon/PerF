@@ -1,0 +1,15 @@
+load m-output/init-ramp-f
+
+mod TEST-M-10 is
+
+  inc INIT-RAMP-F .
+
+  --- init(RTX,WTX,RWTX,CLS,DCS,REPLS,KEYS,ROPS,WOPS,RWOPS,KAD) 
+  op initconf : -> Config .
+  eq initconf = init(90,10,0,1,1,2,10,2,2,0,uniform) .
+  op initconfrun : -> Config .
+  eq initconfrun = run(initconf,1.0e+10) .
+
+endm
+
+set clear rules off .

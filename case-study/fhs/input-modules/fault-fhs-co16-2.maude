@@ -1,0 +1,38 @@
+load ../fault-lib
+
+mod FAULT-FHS-CO16-2 is
+  inc FAULT-LIB .
+  inc NAT .
+  
+  --- geneECcontent(evilSrcNode, allNodeNumber, viewLimit)
+  op geneECcontent : Nat Nat Nat -> ContentEquivocatePairList .
+  --- geneECcontent(evilSrcNode, evilViewNum, allNodeNumber, viewLimit)
+  op $geneECcontent : Nat Nat Nat Nat -> ContentEquivocatePairList .
+  vars N1 N2 N3 N4 : Nat . vars CEPL CEPL1 CEPL2 : ContentEquivocatePairList .
+  eq geneECcontent(N4,N1,N2) = $geneECcontent(N4,N4,N1,N2) .
+  ceq $geneECcontent(N4,N1,N2,N3) = 
+    [prepare([[Bparent : sd(N1,1), Bview : N1, Bqc : << QCtype : highQC, QCview : sd(N1,1), QCsign : N4 >>]]) 
+      | prepare([[Bparent : sd(N1,2), Bview : N1, Bqc : << QCtype : highQC, QCview : sd(N1,2), QCsign : N4 >>]]) ,N2 quo 2] ::
+    $geneECcontent(N4,N1 + N2,N2,N3)
+    if N1 < N3 .
+  ceq $geneECcontent(N4,N1,N2,N3) = nilCEPL
+    if N1 >= N3 .
+
+  eq injectorObj =
+  < injector : Injector | 
+    ECevilSrc : (3 ^:^ 6),
+    ECequivocateContent : (geneECcontent(3,16,100) :: geneECcontent(6,16,100)) ,
+    ECsufferedMsg : nil,
+    PAstatus : standby, PAoccurTime : 30.0, PAdurationTime : 25.0,
+    PAmood : rand, PAcutMsg : nil, PAallActors : (0 ^:^ 1 ^:^ 2 ^:^ 3 ^:^ 4 ^:^ 5 ^:^ 6 ^:^ 7 ^:^ 8 ^:^ 9 ^:^ 10 ^:^ 11 ^:^ 12 ^:^ 13 ^:^ 14 ^:^ 15),
+    PApart : (0 ^:^ 1 ^:^ 2 ^:^ 3 ^:^ 4 ^:^ 5 ^:^ 6 ^:^ 7 :|: 8 ^:^ 9 ^:^ 10 ^:^ 11 ^:^ 12 ^:^ 13 ^:^ 14 ^:^ 15),
+    faultLog : nil,
+    faultRegi : (pa :: ec),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm
+
+---(
+rew geneECcontent(3,16,100) .
+
+)

@@ -1,0 +1,676 @@
+---(
+fault injector
+based on apfmaude
+1. fault interface
+2. fault handler modules: msgloss, msgdup, partition, crash, delay, tempering, equivocation
+3. fault controller module
+4. fault injector module
+)
+load apfmaude
+load probability
+
+mod FAULT-INTERFACE is
+  inc APFMAUDE .
+  pr PROBABILITY .
+
+  sort FaultBehavior .
+  op nullFB : -> FaultBehavior .
+  sort FaultBehaviorList .
+  subsort FaultBehavior < FaultBehaviorList .
+  op nilFBL : -> FaultBehaviorList .
+  op _;_ : FaultBehaviorList FaultBehaviorList -> FaultBehaviorList [assoc id: nilFBL].
+  
+  op auth : FMsg FaultBehavior -> FMsg .
+
+  --- check whether fbhv condition is satisfied
+  op isSatisfied : FaultBehaviorList FMsg ActorConfig -> Bool .
+  var FB : FaultBehavior . var FBL : FaultBehaviorList .
+  var FMSG : FMsg . var AC : ActorConfig .
+  ceq isSatisfied((FB ; FBL), FMSG, AC) = 
+      isSatisfied(FB, FMSG, AC) and isSatisfied(FBL, FMSG, AC)
+    if FBL =/= nilFBL .
+
+  --- priority
+  op priority : FaultBehavior -> Nat [ctor] .   
+  eq priority(nullFB) = 9 .   --- lowest priority
+  ops PRI-TIME-TRI PRI-MSG-MOD PRI-MSG-IND : -> Nat .
+  eq PRI-TIME-TRI = 1 .   --- time-trigger, level 1
+  eq PRI-MSG-MOD = 2 .   --- message-modification, level 2
+  eq PRI-MSG-IND = 3 .   --- message-induced, level 3
+
+  var L : Qid . var ACTOR : Actor . var C : Config . var S : Scheduler .
+  --- attach rule label on Msg
+  op AttachRuleLabel : Qid Config -> Config .
+  eq AttachRuleLabel(L,(MSG C)) = [MSG,L] AttachRuleLabel(L,C) .
+  eq AttachRuleLabel(L,([MSG,L] C)) = [MSG,L] AttachRuleLabel(L,C) .
+  eq AttachRuleLabel(L,(ACTOR C)) = ACTOR AttachRuleLabel(L,C) .
+  eq AttachRuleLabel(L,(S C)) = S AttachRuleLabel(L,C) .
+  eq AttachRuleLabel(L,null) = null .
+
+
+  --- Qid Set
+  inc QID .
+  sort QidSetF .
+  subsort Qid < QidSetF .
+  op nilQSF : -> QidSetF .
+  op _^^_ : QidSetF QidSetF -> QidSetF [assoc comm id: nilQSF] .
+
+  --- Content Set 
+  sort ContentSetF .
+  subsort Content < ContentSetF .
+  op emptyCSF : -> ContentSetF .
+  op _^^_ : ContentSetF ContentSetF -> ContentSetF [assoc id: emptyCSF] .
+
+  --- check whether Rl/Oid in the list
+  var O : Oid . var OS : OidSetF .
+  var Q : Qid . var QS : QidSetF .
+  var CO : Content . var CS : ContentSetF .
+
+  op allRl : -> QidSetF .
+  op isTargetRl : Qid QidSetF -> Bool .
+  eq isTargetRl(Q,(Q ^^ QS)) = true .
+  eq isTargetRl(Q,allRl) = true .   --- all rl are target
+  eq isTargetRl(Q,QS) = false [owise] .
+
+  op allOid : -> OidSetF .
+  op isTargetOid : Oid OidSetF -> Bool .
+  eq isTargetOid(O, (O ^^ OS)) = true .
+  eq isTargetOid(O, allOid) = true .   --- all oid are target
+  eq isTargetOid(O,OS) = false [owise] .
+
+  op allCo : -> ContentSetF .
+  op isTargetCo : Content ContentSetF -> Bool .
+  eq isTargetCo(CO, (CO ^^ CS)) = true .
+  eq isTargetCo(CO, allCo) = true .   --- all content are target
+  eq isTargetCo(CO,CS) = false [owise] .
+
+  --- Msg ListF
+  sort MsgListF .
+  subsort Msg < MsgListF .
+  op nilMLF : -> MsgListF .
+  op _^:^_ : MsgListF MsgListF -> MsgListF [assoc id: nilMLF] . 
+  var MSG : Msg . vars MLF MLF' : MsgListF .
+  op _in_ : Msg MsgListF -> Bool .
+  eq MSG in (MLF ^:^ MSG ^:^ MLF') = true .
+  eq MSG in MLF = false [owise] .
+
+  vars SL SL' : ScheduleList .
+  op _in_ : FMsg ScheduleList -> Bool .
+  eq FMSG in (SL ^:^ MSG ^:^ SL') = true .
+  eq FMSG in SL = false [owise] .
+
+endm
+
+
+mod FAULT-MSGLOSS is
+  inc FAULT-INTERFACE .
+  --- abbr. ml
+  op ml : -> Oid .
+  op MsgLoss : -> ActorType .
+
+  --- rate for doing msgloss, set by initconf, default 1.0
+  op lossRate:_ : Float -> Attribute .
+  --- the recvers in list may suffer from msg loss
+  op targetRecv:_ : OidSetF -> Attribute .
+  --- the src in list may suffer from msg loss
+  op targetSrc:_ : OidSetF -> Attribute .
+  --- the rule label in list may suffer from msg loss
+  op targetRl:_ : QidSetF -> Attribute .
+
+  --- fault config interface
+  op MLlossRate : -> Float .
+  op MLtargetRecv : -> OidSetF .
+  op MLtargetSrc : -> OidSetF .
+  op MLtargetRl : -> QidSetF .
+
+  var GT : Float . var MSG : Msg . var L : Qid .
+  var AS : AttributeSet . vars O O' : Oid .
+  var HDLS : ActorConfig . vars OS OS' : OidSetF .
+  var CONTENT : Content .  var RLS : QidSetF .
+  var R : Float .  
+  
+  op msgloss : -> FaultBehavior .
+  eq priority(msgloss) = PRI-MSG-MOD .
+  eq auth([GT,MSG,L],msgloss) < ml : MsgLoss | AS >
+     = < ml : MsgLoss | AS > .
+  --- a msg loses if msg rl is in targetRl 
+  --- and msg recv is in targetRecv 
+  --- and msg src is in targetSrc
+  --- and rule label in targetRl with rate
+  eq isSatisfied(msgloss, [GT,CONTENT from O to O',L], 
+    < ml : MsgLoss | targetSrc: OS, targetRecv: OS', 
+            targetRl: RLS, lossRate: R > HDLS) 
+    = isTargetOid(O,OS) and isTargetOid(O',OS') 
+      and isTargetRl(L,RLS) and rand < R .
+endm
+
+
+mod FAULT-MSGDUP is
+  inc FAULT-INTERFACE .
+  --- abbr. md
+  op msgdup : -> Oid .
+  op MsgDup : -> ActorType .
+  
+  --- duplicated msg
+  op dupMsg:_ : ScheduleList -> Attribute .
+  --- rate for doing md-vul, set by initconf, default 1.0
+  op dupRate:_ : Float -> Attribute .
+  --- the rl in list may suffer from msg dup
+  op targetRl:_ : QidSetF -> Attribute .
+  --- the recvers in list may suffer from msg dup
+  op targetRecv:_ : OidSetF -> Attribute .
+  --- time gap between original and duplicated
+  op dupIntervalTime:_ : Float -> Attribute .
+
+  --- fault config interface
+  op MDdupRate : -> Float .
+  op MDtargetRl : -> QidSetF .
+  op MDtargetRecv: -> OidSetF .
+  op MDdupIntervalTime : -> Float .
+
+  var MSG : Msg . var SL : ScheduleList .
+  var AS : AttributeSet . vars GT D R : Float . var L : Qid .
+  vars O O' : Oid . var CONTENT : Content .
+  var OS : OidSetF . var RLS : QidSetF . 
+
+  --- func1: a msg may duplicate if msg rl is in MDtargetRl 
+  --- and msg recv is in MDtargetRecv
+  --- and not dup before with rate 
+  op msgdup : -> FaultBehavior .
+  eq priority(msgdup) = PRI-MSG-IND .
+  eq auth ([GT,MSG,L] , msgdup )
+    < msgdup : MsgDup | dupIntervalTime: D , dupMsg: SL, AS >
+  = < msgdup : MsgDup | dupIntervalTime: D , dupMsg: (SL ; [GT,MSG,L]), AS >
+    [GT,MSG,L]  sch([D,MSG,L]) .
+
+  eq isSatisfied(msgdup,[GT,CONTENT from O to O',L], 
+    < msgdup : MsgDup | targetRecv: OS, targetRl: RLS, 
+      dupRate: R, dupMsg: SL, AS >) 
+  = isTargetOid(O',OS) and isTargetRl(L,RLS) 
+    and rand < R and (not [GT,CONTENT from O to O',L] in SL) .
+
+endm
+
+
+mod FAULT-PARTITION is
+  inc FAULT-INTERFACE .
+  --- abbr. pt
+  op pt : -> Oid .
+  op Partition : -> ActorType .
+
+  sort NetworkStatus .
+  ops healthy partitioned recovered : -> NetworkStatus .
+  sort NetworkPartition .
+  op [_|_] : OidSetF OidSetF -> NetworkPartition .
+
+  op status:_ : NetworkStatus -> Attribute .
+  op allNodes:_ : OidSetF -> Attribute .
+  op parts:_ : NetworkPartition -> Attribute .
+  --- the rl in set may trigger pt
+  op targetRl:_ : QidSetF -> Attribute .
+  --- the recvers in set may trigger pt
+  op targetRecv:_ : OidSetF -> Attribute .
+  --- the src in set may trigger pt
+  op targetSrc:_ : OidSetF -> Attribute .
+  --- partition duration time
+  op durationTime:_ : Float -> Attribute .
+  --- partition occur time
+  op occurTime:_ : Float -> Attribute .
+  --- for recover-msg condition
+  op recoverRl:_ : QidSetF -> Attribute .
+  op recoverRecv:_ : OidSetF -> Attribute .
+
+  --- fault config interface
+  op PTallNodes : -> OidSetF .
+  op PTparts : -> NetworkPartition .
+  op PTtargetRl : -> QidSetF .
+  op PTtargetRecv: -> OidSetF .
+  op PTtargetSrc : -> OidSetF .
+  op PTdurationTime : -> Float .
+  op PToccurTime : -> Float .
+  op PTrecoverRl : -> QidSetF .
+  op PTrecoverRecv : -> OidSetF .
+
+
+  var AS : AttributeSet . var HDLS : ActorConfig .
+  vars T OT DT GT : Float .  var MSG : Msg . var L : Qid .
+  var RLS : QidSetF .  var CONTENT : Content .
+  vars O O' O1 O2 : Oid .  vars OS OS' OS1 OS2 : OidSetF .
+  var NS : NetworkStatus .
+
+  --- func1: partition occur by time
+  op part-time : -> FaultBehavior .
+  eq priority(part-time) = PRI-TIME-TRI .
+  eq auth([GT,MSG,L],part-time)
+    < pt : Partition | status: healthy,
+        parts: [ OS1 | OS2 ], allNodes: OS, AS >
+  = < pt : Partition | status: partitioned, parts: 
+        if OS1 == empty then randomPart(OS)
+        else [ OS1 | OS2 ] fi, allNodes: OS, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(part-time,[GT,MSG,L],
+    < pt : Partition | status: NS, occurTime: T, AS > HDLS)
+   = GT >= T and NS == healthy .
+
+  op part-msg : -> FaultBehavior .
+  eq priority(part-msg) = PRI-MSG-IND .
+  eq auth([GT,MSG,L],part-msg)
+    < pt : Partition | status: healthy, occurTime: OT,
+        parts: [ OS1 | OS2 ], allNodes: OS, AS >
+  = < pt : Partition | status: partitioned, occurTime: GT, 
+        parts: if OS1 == empty then randomPart(OS)
+        else [ OS1 | OS2 ] fi, allNodes: OS, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(part-msg,[GT,CONTENT from O to O',L],
+    < pt : Partition | status: NS, targetRl: RLS, 
+      targetRecv: OS, targetRecv: OS', AS > HDLS)
+    = isTargetRl(L,RLS) and isTargetOid(O,OS) 
+      and isTargetOid(O',OS') and NS == healthy .
+
+  op part-drop : -> FaultBehavior .
+  eq priority(part-drop) = PRI-MSG-MOD .
+  eq auth([GT,MSG,L],part-drop)
+      < pt : Partition | AS >
+  =   < pt : Partition | AS > .
+  eq isSatisfied(part-drop,[GT,CONTENT from O to O',L],
+    < pt : Partition | status: NS, 
+      parts: [ OS1 | OS2 ], AS > HDLS) 
+    = ((isTargetOid(O,OS1) and isTargetOid(O',OS2)) 
+    or (isTargetOid(O,OS2) and isTargetOid(O',OS1)))
+    and NS == partitioned .
+
+  op recover-time : -> FaultBehavior .
+  eq priority(recover-time) = PRI-TIME-TRI .
+  eq auth([GT,MSG,L],recover-time)
+    < pt : Partition | status: partitioned, AS >
+  =  < pt : Partition | status: recovered, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(recover-time,[GT,MSG,L],
+    < pt : Partition | status: NS, 
+      occurTime: OT, durationTime: DT, AS > HDLS) 
+    = GT >= OT + DT and NS == partitioned .
+
+  op recover-msg : -> FaultBehavior .
+  eq priority(recover-msg) = PRI-MSG-IND .
+  eq auth([GT,MSG,L],recover-msg)
+    < pt : Partition | status: partitioned, AS >
+  =  < pt : Partition | status: recovered, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(recover-msg,[GT,CONTENT from O to O',L],
+    < pt : Partition | status: NS, recoverRl: RLS, 
+      recoverRecv: OS, AS > HDLS) 
+    = isTargetRl(L, RLS) and isTargetOid(O',OS) 
+      and NS == partitioned .
+
+  var PA : NetworkPartition .
+  --- random one part OidSet to 2 non-empty OidSet, require input at least 2 Oid
+  op randomPart : OidSetF -> NetworkPartition .
+  op $randomPart : OidSetF NetworkPartition -> NetworkPartition .
+  eq randomPart(OS) = $randomPart(OS,[empty | empty]) .
+  ceq $randomPart((O ^^ OS),[ OS1 | OS2 ]) 
+    = $randomPart(OS,[(O ^^ OS1) | OS2 ]) 
+      if rand >= 0.5 [owise] .
+  ceq $randomPart((O ^^ OS),[ OS1 | OS2 ]) 
+    = $randomPart(OS,[ OS1 | (O ^^ OS2)])
+      if rand < 0.5 [owise] .
+  ceq $randomPart(O,[ empty | OS2 ]) 
+    = $randomPart(empty,[ O | OS2 ])
+      if OS2 =/= empty .
+  ceq $randomPart(O,[ OS1 | empty ]) 
+    = $randomPart(empty,[ OS1 | O ])
+      if OS1 =/= empty .
+  eq $randomPart(empty,PA) = PA .
+
+endm
+
+
+mod FAULT-CRASH is
+  inc FAULT-INTERFACE .
+  --- abbr. cr
+  op cr : -> Oid .
+  op Crash : -> ActorType .
+  
+  sort NodeStatus .
+  ops normal crashing reboot : -> NodeStatus .
+
+  op nodeStatus:_ : NodeStatus -> Attribute .
+  op targetObjs:_ : OidSetF -> Attribute .
+  op targetRl:_ : QidSetF -> Attribute .
+  op targetContent:_ : ContentSetF -> Attribute .
+  op targetRecv:_ : OidSetF -> Attribute .
+  op crashingObj:_ : Oid -> Attribute .
+  op rebootRl:_ : QidSetF -> Attribute .
+  op rebootRecv:_ : OidSetF -> Attribute .
+  op startTime:_ : Float -> Attribute .
+  op spanTime:_ : Float -> Attribute .
+
+  --- fault config interface
+  op CRtargetObjs : -> OidSetF .
+  op CRtargetRl : -> QidSetF .
+  op CRtargetContent : -> ContentSetF .
+  op CRtargetRecv : -> OidSetF .
+  op CRcrashingObj : -> Oid .
+  op CRrebootRl : -> QidSetF .
+  op CRrebootRecv : -> OidSetF .
+  op CRstartTime : -> Float .
+  op CRspanTime : -> Float .
+
+  op noObj : -> Oid .
+
+  var AS : AttributeSet . var HDLS : ActorConfig .
+  vars T ST GT : Float .  var MSG : Msg . var L : Qid .
+  var RLS : QidSetF .  var CONTENT : Content . var CS : ContentSetF .
+  vars O O' O'' O1 O2 : Oid .  vars OS OS' OS1 OS2 : OidSetF .
+  var NS : NodeStatus .
+
+  op crash-msg : -> FaultBehavior .
+  eq priority(crash-msg) = PRI-MSG-IND .
+  eq auth([GT,MSG,L],crash-msg)
+    < cr : Crash | nodeStatus: normal, targetObjs: OS, 
+        crashingObj: O, AS >
+  = < cr : Crash | nodeStatus: crashing, targetObjs: OS, 
+        crashingObj: if O == noObj then selectCrashObj(OS)
+        else O fi, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(crash-msg,[GT,CONTENT from O to O',L],
+    < cr : Crash | nodeStatus: NS, targetRl: RLS, 
+      targetContent: CS, targetRecv: OS, AS > HDLS) 
+    = isTargetRl(L,RLS) and isTargetCo(CONTENT,CS) 
+      and isTargetOid(O',OS) and NS == normal .
+
+  op crash-time : -> FaultBehavior .
+  eq priority(crash-time) = PRI-TIME-TRI .
+  eq auth([GT,MSG,L],crash-time)
+    < cr : Crash | nodeStatus: normal, targetObjs: OS, 
+        crashingObj: O, AS >
+  = < cr : Crash | nodeStatus: crashing, targetObjs: OS, 
+        crashingObj: if O == noObj then selectCrashObj(OS)
+        else O fi, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(crash-time,[GT,MSG,L],
+    < cr : Crash | nodeStatus: NS, startTime: T, AS >) 
+    = GT >= T and NS == normal .
+
+  op crash-drop : -> FaultBehavior .
+  eq priority(crash-drop) = PRI-MSG-MOD .
+  eq auth([GT,MSG,L],crash-drop)
+      < cr : Crash | AS >
+  =   < cr : Crash | AS > .
+  eq isSatisfied(crash-drop,[GT,CONTENT from O to O',L],
+    < cr : Crash | nodeStatus: NS, crashingObj: O'', AS >)
+    = (O' == O'') and NS == crashing .
+
+  op reboot-msg : -> FaultBehavior .
+  eq priority(reboot-msg) = PRI-MSG-IND .
+  eq auth([GT,MSG,L],reboot-msg)
+    < cr : Crash | nodeStatus: crashing, AS >
+  =  < cr : Crash | nodeStatus: reboot, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(reboot-msg,[GT,CONTENT from O to O',L],
+    < cr : Crash | nodeStatus: NS, rebootRl: RLS, 
+      rebootRecv: OS, AS >)
+    = isTargetRl(L,RLS) and isTargetOid(O',OS) 
+      and NS == crashing .
+
+  op reboot-time : -> FaultBehavior .
+  eq priority(reboot-time) = PRI-TIME-TRI .
+  eq auth([GT,MSG,L],reboot-time)
+    < cr : Crash | nodeStatus: crashing, AS >
+  =  < cr : Crash | nodeStatus: reboot, AS >
+    [GT,MSG,L] .
+  eq isSatisfied(reboot-time,[GT,MSG,L],
+    < cr : Crash | nodeStatus: NS, startTime: T, 
+      spanTime: ST, AS >) 
+    = GT >= T + ST and NS == crashing .
+
+  vars R R' : Float .
+  --- select an O from OS randomly, selectCrashObj(OS)
+  op selectCrashObj : OidSetF -> Oid .
+  --- (OS, current rand, max rand, Oid with max rand)
+  op $selectCrashObj : OidSetF Float Float Oid -> Oid .
+  eq selectCrashObj(O ^^ OS) = $selectCrashObj(OS,rand,rand,O) .
+  ceq $selectCrashObj(O ^^ OS, R, R', O')
+    = $selectCrashObj(OS, rand, R, O)
+    if R > R' .
+  ceq $selectCrashObj(O ^^ OS, R, R', O')
+    = $selectCrashObj(OS, rand, R', O')
+    if R <= R' .
+  eq $selectCrashObj(emptyOSF,R,R',O) = O .
+
+endm
+
+
+mod FAULT-DELAY is
+  inc FAULT-INTERFACE .
+  --- abbr. dl
+  op dl : -> Oid .
+  op Delay : -> ActorType .
+
+  op targetRl:_ : QidSetF -> Attribute .
+  op targetSrc:_ : OidSetF -> Attribute .
+  op targetRecv:_ : OidSetF -> Attribute .
+  op targetContent:_ : ContentSetF -> Attribute .
+  op delayTime:_ : Float -> Attribute .
+  op delayedMsg:_ : ScheduleList -> Attribute .
+
+  --- fault config interface
+  op DLtargetRl : -> QidSetF .
+  op DLtargetSrc : -> OidSetF .
+  op DLtargetRecv : -> OidSetF .
+  op DLtargetContent : -> ContentSetF .
+  op DLdelayTime : -> Float .
+
+  var AS : AttributeSet . var HDLS : ActorConfig .
+  vars GT T D : Float .  var MSG : Msg . var L : Qid .
+  var RLS : QidSetF .  var CONTENT : Content . var CS : ContentSetF .
+  vars O O' : Oid .  vars OS OS' : OidSetF . var SL : ScheduleList .
+
+  op abnormal-delay : -> FaultBehavior .
+  eq priority(abnormal-delay) = PRI-MSG-IND .
+  eq auth([GT,MSG,L],abnormal-delay)
+      < dl : Delay | delayedMsg: SL, delayTime: D, AS >
+  =   < dl : Delay | delayedMsg: (SL ; [GT,MSG,L]), delayTime: D, AS >
+      sch([D,MSG,L]) .
+  
+  eq isSatisfied(abnormal-delay,[GT,CONTENT from O to O',L], 
+    < dl : Delay | targetRl: RLS, targetSrc: OS, 
+      targetRecv: OS', targetContent: CS, 
+      delayedMsg: SL, AS > )
+    = isTargetRl(L,RLS) and isTargetOid(O,OS) and isTargetOid(O',OS') 
+      and isTargetCo(CONTENT,CS) 
+      and (not [GT,CONTENT from O to O',L] in SL) .
+
+endm
+
+
+mod FAULT-TEMPERING is
+  --- abbr. tp
+  inc FAULT-INTERFACE .
+  op tp : -> Oid .
+  op Tampering : -> ActorType .
+
+  --- evil sender
+  op targetSrc:_ : OidSetF -> Attribute .
+  --- tamper content pair, [original - tampered]
+  op contentPair:_ : ContentPairSet -> Attribute .
+
+  --- fault config interface
+  op TPtargetSrc : -> OidSetF .
+  op TPcontentPair : -> ContentPairSet .
+
+  sorts ContentPair ContentPairSet .
+  subsort ContentPair < ContentPairSet .
+  op [_-_] : Content Content -> ContentPair .
+  op emptyCPS : -> ContentPairSet .
+  op _,_ : ContentPairSet ContentPairSet -> ContentPairSet [assoc comm id: emptyCPS] .
+
+  var AS : AttributeSet . var HDLS : ActorConfig .
+  vars T GT : Float .  var MSG : Msg . var L : Qid .
+  var RLS : QidSetF .  vars CONTENT CONTENT' : Content .
+  vars O O' : Oid .  vars OS OS' : OidSetF .
+  var CP : ContentPair . var CPS : ContentPairSet .
+
+  op tampering : -> FaultBehavior .
+  eq priority(tampering) = PRI-MSG-MOD .
+  eq auth([GT,CONTENT from O to O',L],tampering)
+    < tp : Tampering | contentPair: ([CONTENT - CONTENT'] , CPS), AS >
+  = < tp : Tampering | contentPair: ([CONTENT - CONTENT'] , CPS), AS >
+    [GT,CONTENT' from O to O',L] .
+  eq isSatisfied(tampering,[GT,CONTENT from O to O',L],
+    < tp : Tampering | targetSrc: OS, 
+      contentPair: CPS, AS > HDLS) 
+    = isTargetOid(O,OS) and hasPair(CONTENT,CPS) .
+  
+  op hasPair : Content ContentPairSet -> Bool .
+  eq hasPair(CONTENT,([CONTENT - CONTENT'] , CPS)) = true .
+  eq hasPair(CONTENT,CPS) = false [owise] .
+
+endm
+
+
+mod FAULT-EQUIVOCATION is
+  inc FAULT-INTERFACE .
+  --- abbr. ec
+  op ec : -> Oid .
+  op Equivocation : -> ActorType .
+
+  --- evil sender
+  op targetSrc:_ : OidSetF -> Attribute .
+  --- equivocate content
+  op contentPairWithOid:_ : ContentPairOSet -> Attribute .
+
+  --- fault config interface
+  op ECtargetSrc : -> OidSetF .
+  op ECcontentPairWithOid : -> ContentPairOSet .
+
+  sorts ContentPairO ContentPairOSet .
+  subsort ContentPairO < ContentPairOSet .
+  op [_-_,_] : Content Content OidSetF -> ContentPairO .
+  op emptyCPOS : -> ContentPairOSet .
+  op _,_ : ContentPairOSet ContentPairOSet -> ContentPairOSet [assoc comm id: emptyCPOS] .
+
+  var AS : AttributeSet . var HDLS : ActorConfig .
+  vars T GT : Float .  var MSG : Msg . var L : Qid .
+  var RLS : QidSetF .  vars CONTENT CONTENT' : Content .
+  vars O O' : Oid .  vars OS OS' : OidSetF .
+  var CP : ContentPairO . var CPS : ContentPairOSet .
+
+  op equivocation : -> FaultBehavior .
+  eq priority(equivocation) = PRI-MSG-MOD .
+  eq auth([GT,CONTENT from O to O',L],equivocation)
+    < ec : Equivocation | AS, 
+      contentPairWithOid: ([CONTENT - CONTENT', O' ^^ OS'], CPS) >
+  = < ec : Equivocation | AS, 
+      contentPairWithOid: ([CONTENT - CONTENT', O' ^^ OS'], CPS) >
+     [GT, CONTENT' from O to O',L] .
+  eq isSatisfied(equivocation,[GT,CONTENT from O to O',L],
+    < ec : Equivocation | targetSrc: OS, 
+      contentPairWithOid: CPS, AS > HDLS) 
+    = isTargetOid(O,OS) and hasPairOid(CONTENT,O',CPS) .
+  
+  op hasPairOid : Content Oid ContentPairOSet -> Bool .
+  eq hasPairOid(CONTENT,O,([CONTENT - CONTENT', O ^^ OS] , CPS)) = true .
+  eq hasPairOid(CONTENT,O,CPS) = false [owise] .
+endm
+
+
+mod FAULT-CONTROLLER is
+  inc APFMAUDE .
+  inc FAULT-INTERFACE .
+  inc FAULT-MSGLOSS .
+  inc FAULT-MSGDUP .
+  inc FAULT-PARTITION .
+  inc FAULT-CRASH .
+  inc FAULT-DELAY .
+  inc FAULT-EQUIVOCATION .
+  inc FAULT-TEMPERING .
+
+  op ctrl : -> Oid .
+  op Controller : -> ActorType .
+
+  --- injected fault behaviors
+  op fbhvs:_ : FaultBehaviorList -> Attribute [ctor] .
+  --- interface
+  op fbhv : -> FaultBehaviorList .
+
+  vars FBL FBL' : FaultBehaviorList . vars FB FB' : FaultBehavior .
+  var GT : Float . var MSG : Msg . var L : Qid .
+  var CO : Content . vars O O' : Oid .
+  var ML-AS : AttributeSet .
+  var MD-AS : AttributeSet .
+  var PT-AS : AttributeSet .
+  var CR-AS : AttributeSet .
+  var DL-AS : AttributeSet .
+  var TP-AS : AttributeSet .
+  var EC-AS : AttributeSet .
+  ceq [GT, CO from O to O', L]  
+    < ctrl : Controller | fbhvs: FBL >
+    < ml : MsgLoss | ML-AS >
+    < msgdup : MsgDup | MD-AS >
+    < pt : Partition | PT-AS >
+    < cr : Crash | CR-AS >
+    < dl : Delay | DL-AS >
+    < tp : Tampering | TP-AS >
+    < ec : Equivocation | EC-AS >
+  = < ctrl : Controller | fbhvs: FBL >
+    < ml : MsgLoss | ML-AS >
+    < msgdup : MsgDup | MD-AS >
+    < pt : Partition | PT-AS >
+    < cr : Crash | CR-AS >
+    < dl : Delay | DL-AS >
+    < tp : Tampering | TP-AS >
+    < ec : Equivocation | EC-AS >
+    (if isSatisfied(FBL, [GT, CO from O to O',L], 
+      < ml : MsgLoss | ML-AS >
+      < msgdup : MsgDup | MD-AS >
+      < pt : Partition | PT-AS >
+      < cr : Crash | CR-AS >
+      < dl : Delay | DL-AS >
+      < tp : Tampering | TP-AS >
+      < ec : Equivocation | EC-AS >
+      ) 
+      then auth([GT, CO from O to O', L], FB)  *** fault behavior authorized   
+      else (CO from O to O') fi)  *** msg released into the system config
+  if FB := topBhv(FBL,[GT, CO from O to O',L],
+    < ml : MsgLoss | ML-AS >
+    < msgdup : MsgDup | MD-AS >
+    < pt : Partition | PT-AS >
+    < cr : Crash | CR-AS >
+    < dl : Delay | DL-AS >
+    < tp : Tampering | TP-AS >
+    < ec : Equivocation | EC-AS >
+    ) .
+
+  --- CO to O', object's local process, no fault
+  eq [GT, CO to O', L]  
+    < ctrl : Controller | fbhvs: FBL >
+  = (CO to O') < ctrl : Controller | fbhvs: FBL > .
+
+  var HDLS : ActorConfig . var FMSG : FMsg . var N : Nat . vars F F' : Float .
+  op topBhv : FaultBehaviorList FMsg ActorConfig -> FaultBehavior .
+  op $topBhv : FaultBehaviorList Nat -> FaultBehavior .
+  op $$topBhv : FaultBehaviorList Float Float FaultBehavior -> FaultBehavior .
+  --- delete not satisfied fbhvs
+  ceq topBhv((FBL ; FB ; FBL'),FMSG, HDLS) = topBhv((FBL ; FBL'),FMSG, HDLS)
+    if not isSatisfied(FB,FMSG,HDLS) .
+  eq topBhv(FBL,FMSG,HDLS) = $topBhv(FBL,9) .
+  --- pick fhbvs with highest priority
+  ceq $topBhv(FBL ; FB ; FBL', N) 
+    = $topBhv(FBL ; FB ; FBL', priority(FB)) if priority(FB) < N .
+  ceq $topBhv(FBL ; FB ; FBL', N) 
+    = $topBhv(FBL ; FBL', priority(FB)) if priority(FB) > N .
+  *** one fbhv with highest priority, output
+  eq $topBhv(FB, N) = FB .
+  *** multiple fbhv with highest priority, randomly choose
+  eq $topBhv(FBL, N) = $$topBhv(FBL,0.0,rand,nullFB) .
+  ceq $$topBhv(FB ; FBL, F, F', FB') = $$topBhv(FBL, F', rand, FB) 
+      if F' > F .
+  ceq $$topBhv(FB ; FBL, F, F', FB') = $$topBhv(FBL, F, rand, FB') 
+      if F' < F .
+  eq $$topBhv(nilFBL,F,F',FB') = FB' .  *** final choice
+
+endm
+
+mod FAULT-INJECTOR is 
+  inc SCHEDULER + FAULT-CONTROLLER .
+endm

@@ -1,0 +1,8 @@
+Confidence (alpha): 0.01
+Threshold (delta): 0.01
+Samples generated: 600
+SMC result: 1.1308343837856487
+Memory usage: 85.578 MB
+Model composition and transformation time used: 0.002770 seconds
+SMC time used: 2.270604 seconds
+Total time used: 2.273374 seconds

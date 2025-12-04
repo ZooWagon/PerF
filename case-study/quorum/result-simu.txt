@@ -1,0 +1,98 @@
+run simulate - quorum - partition
+3 server 4 client, partition duration time from 0 to 25 step 5
+-------
+partition duration time = 0
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.008237 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+('throughput:', 360.6122882122723)
+('totalTxn:', 400.0)
+('totalReadTxn:', 269.0)
+('totalFailTxn:', 61.0)
+Used time(seconds):8.301
+-------
+partition duration time = 5
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006654 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+('throughput:', 360.6122882122723)
+('totalTxn:', 400.0)
+('totalReadTxn:', 269.0)
+('totalFailTxn:', 61.0)
+Used time(seconds):8.292
+-------
+partition duration time = 10
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006501 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+('throughput:', 360.6122882122723)
+('totalTxn:', 400.0)
+('totalReadTxn:', 269.0)
+('totalFailTxn:', 61.0)
+Used time(seconds):8.303
+-------
+partition duration time = 15
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006444 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+('throughput:', 360.6122882122723)
+('totalTxn:', 400.0)
+('totalReadTxn:', 269.0)
+('totalFailTxn:', 61.0)
+Used time(seconds):8.292
+-------
+partition duration time = 20
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006447 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+('throughput:', 360.6122882122723)
+('totalTxn:', 400.0)
+('totalReadTxn:', 269.0)
+('totalFailTxn:', 61.0)
+Used time(seconds):8.328
+-------
+partition duration time = 25
+  >>> == PerF == <<<
+Start F-trans
+Generating files: success.
+Start M-trans
+Generating files: success.
+Analysis done (see also result.txt):
+F&M-trans time used: 0.006973 seconds
+>> Sim Testing test-m <<
+Input generated. Running ...Analyzing ...
+('throughput:', 360.6122882122723)
+('totalTxn:', 400.0)
+('totalReadTxn:', 269.0)
+('totalFailTxn:', 61.0)
+Used time(seconds):8.273

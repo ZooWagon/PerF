@@ -1,0 +1,11 @@
+load ../events
+load 2pc
+
+mod EVENT-2PC is including EVENTS .
+  pr 2PC-INTERFACE . 
+  ops propose finish : Proposal -> Event . 
+  op curResult : MapPBs -> Event .
+  var P : Proposal . var RS : MapPBs . var V : Bool .
+  eq eventMap = ['start , propose(P)]   
+     ;; ['decision , (finish(P) , curResult(RS, P |-> V))] [nonexec] .
+endm

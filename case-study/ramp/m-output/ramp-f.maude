@@ -1,0 +1,855 @@
+load ../input-modules/event-ramp-f.maude
+load ../fault-lib
+
+mod FAULT-MSGLOSS is
+  inc EVENT-RAMP-F .
+  inc FAULT-INTERFACE .
+  op MLmood :_ : Float -> Attribute [ctor] .
+  op MLeatMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- rate for doing ml, set by initconf
+  op MLfaultRate :_ : Float -> Attribute [ctor] .
+  --- the contents in list may suffer from msg loss
+  op MLvulnerableContent :_ : ContentList -> Attribute [ctor] .
+  --- the recvers in list may suffer from msg loss
+  op MLvulnerableAddress :_ : Addresses -> Attribute [ctor] .
+  --- a msg may lose if msgcont is in MLvulnerableContent *and* msg recv is in MLvulnerableAddress 
+
+  vars SL SL2 : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . vars T M R : Float .
+  var AC : ActorConfig . vars O O2 : Address .
+  var CO : Content . vars CL CL2 : ContentList .
+  vars OS OS2 : Addresses .
+  crl [msg-loss-execute] :
+    < injector : Injector | MLmood : M, MLfaultRate : R, 
+      MLeatMsg : SL2, MLvulnerableContent : CL, 
+      MLvulnerableAddress : OS,
+      faultMsg :{ T, (CO from O to O2) }, 
+      faultFlag : faultLicense(ml), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | MLmood : rand, MLfaultRate : R,
+      MLeatMsg : (SL2 ; [T,(CO from O to O2),0]), 
+      MLvulnerableContent : CL, MLvulnerableAddress : OS,
+      faultMsg : null, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and MLisVulnerable(CO,CL,O2,OS) .
+  crl [msg-loss-absolve] :
+    < injector : Injector | MLmood : M, MLfaultRate : R, 
+      MLeatMsg : SL2, MLvulnerableContent : CL, MLvulnerableAddress : OS,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultLicense(ml), AS >
+    AC {T | SL} faultTrigger
+  =>
+    < injector : Injector | MLmood : rand, MLfaultRate : R,
+      MLeatMsg : SL2, MLvulnerableContent : CL, MLvulnerableAddress : OS,
+      faultMsg : { T, (CO from O to O2) }, 
+      faultFlag : faultUpdateMood, AS > faultUpdateMood
+    AC {T | SL}
+  if M <= R and not MLisVulnerable(CO,CL,O2,OS) .
+
+  --- MLnotFault(mood,faultRate) = mood > faultRate
+  op MLnotFault : Float Float -> Bool [ctor] .
+  ceq MLnotFault(M,R) = true if M > R .
+  eq MLnotFault(M,R) = false [owise] .
+
+  op MLisVulnerable : Content ContentList Address Addresses -> Bool .
+  eq MLisVulnerable(CO,CL,O,OS) 
+    = MLisVulnerableContent(CO,CL) and MLisVulnerableAddress(O,OS) .
+  op MLisVulnerableContent : Content ContentList -> Bool .
+  --- eq MLisVulnerableContent(CO,(CL :: CO :: CL2)) = true .
+  --- eq MLisVulnerableContent(CO,CL) = false [owise] .
+  op MLisVulnerableAddress : Address Addresses -> Bool .
+  eq MLisVulnerableAddress(O, (OS ; O ; OS2)) = true .
+  eq MLisVulnerableAddress(O,OS) = false [owise] .
+
+endm
+
+mod FAULT-COMPOSITE is
+  inc EVENT-RAMP-F .
+  inc FAULT-MSGLOSS .
+  
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 T : Float .
+  var FL : FaultList . vars FT FT2 : FaultType .
+  var AS : AttributeSet .
+  ---   var PAOS11 PAOS22 : Addresses . var PAFS : PAFaultStatus .
+  vars SL SL2 : ScheduleList . vars O1 O2 : Address . var MP : Content .
+  ---   var CRFS : CRFaultStatus . vars CrushOid : Address . var CRVCL : ContentList .
+  var AC : ActorConfig . var MSG : Msg . var AM : ActiveMsg .
+  crl [make-fault-license] :
+  < injector : Injector | 
+    MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+  ---     PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+  ---       PApartRate : R31, PArecoRate : R32,
+  ---     CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid, CRvulnerableContent : CRVCL,
+  ---       CRcrushRate : R41, CRrebootRate : R42,
+    faultLog : SL2,
+    faultRegi : FL,
+    faultMsg : null, 
+    faultFlag : nonFF, AS > 
+    {T, (MP from O2 to O1)} AC {T | SL}
+  =>
+  < injector : Injector | 
+    MLmood : M1, MLfaultRate : R1, 
+  ---     MDmood : M2, MDfaultRate : R2,
+  ---     PAmood : M3, PAstatus : PAFS, PApart : (PAOS11 :|: PAOS22), 
+  ---       PApartRate : R31, PArecoRate : R32,
+  ---     CRmood : M4, CRstatus : CRFS, CRcrushingObj : CrushOid,  CRvulnerableContent : CRVCL,
+  ---       CRcrushRate : R41, CRrebootRate : R42,
+    faultLog : (SL2 ; [T,(debugFlagM(M1,0.0,0.0,0.0) to injector),0]),
+    faultRegi : FL,
+    faultMsg : {T, (MP from O2 to O1)}, 
+    faultFlag : genefaultLicense(
+      geneFaultList((nonFault :: FL),(false
+          :: (not MLnotFault(M1,R1)) 
+  ---           :: (not MDnotFault(M2,R2)) 
+  ---           :: (not PAnotFault(PAFS,M3,R31,R32,O1,O2,PAOS11,PAOS22))
+  ---           :: (not CRnotFault(CRFS,M4,R41,R42,CrushOid,O1,MP,CRVCL))
+          )),0.0,rand,nonFault),
+    AS > 
+    AC {T | SL} faultTrigger
+  if false
+    or not MLnotFault(M1,R1)
+  ---     or not MDnotFault(M2,R2)
+  ---     or not PAnotFault(PAFS,M3,R31,R32,O1,O2,PAOS11,PAOS22) 
+  ---     or not CRnotFault(CRFS,M4,R41,R42,CrushOid,O1,MP,CRVCL) 
+    or false .
+  rl [fault-update-mood] :
+    < injector : Injector | 
+      MLmood : M1, 
+  ---       MDmood : M2, 
+  ---       PAmood : M3, 
+  ---       CRmood : M4,
+      faultMsg : {T, MSG}, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+      MLmood : 0.9999, 
+  ---       MDmood : 0.9999,
+  ---       PAmood : 0.9999, 
+  ---       CRmood : 0.9999,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    {T, MSG} AC {T | SL} .
+  rl [fault-update-mood-2] :
+    < injector : Injector | 
+      MLmood : M1, 
+  ---       MDmood : M2, 
+  ---       PAmood : M3, 
+  ---       CRmood : M4,
+      faultMsg : null, faultFlag : faultUpdateMood, AS > 
+    AC {T | SL} faultUpdateMood
+  =>
+    < injector : Injector | 
+      MLmood : rand, 
+  ---       MDmood : rand,
+  ---       PAmood : rand, 
+  ---       CRmood : rand,
+      faultMsg : null, faultFlag : nonFF, AS > 
+    AC {T | SL} .
+
+  --- geneFaultList(FL,BL)
+  --- generate an FaultList, extract FL for according Bool in BL is true  
+  var BL : BoolList . var B : Bool .
+  op geneFaultList : FaultList BoolList -> FaultList [ctor] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = FT :: geneFaultList(FL,BL)
+    if B [owise] .
+  ceq geneFaultList((FT :: FL),(B :: BL)) = geneFaultList(FL,BL)
+    if not B [owise] .
+  eq geneFaultList(nilFL,nilBL) = nilFL .
+  --- generate faultLicense from FaultList, indicating FT be selected
+  --- genefaultLicense(FaultList,highestScore,currentScore,FaultType)
+  op genefaultLicense : FaultList Float Float FaultType -> FaultFlag [ctor] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R2,rand,FT)
+    if R2 > R1 [owise] .
+  ceq genefaultLicense((FT :: FL),R1,R2,FT2) = genefaultLicense(FL,R1,rand,FT2)
+    if R2 <= R1 [owise] .
+  eq genefaultLicense(nilFL,R1,R2,FT) = faultLicense(FT) .
+endm
+
+*** fast RA reads
+*** No read-write
+*** No replication, i.e., #DC=1
+--- RAMP-F-OPW
+--- 2023.12.19 16:16
+
+load ../input-modules/replica-table
+
+mod RAMP-F is
+  inc EVENT-RAMP-F .
+  including CLIENT-REPLICA .
+  including MESSAGE .
+  including REPLICA-TABLE .
+  including SAMPLER .
+  including VERSION-RAMP .
+  including VALUES-NAT .
+  inc MSG-STRING-CONVERSION .
+  inc APMAUDE .
+
+  op ld : -> Delay .  --- local delay 
+  op rd : -> Delay .  --- remote delay
+  op nd : -> Delay .  --- no delay
+  eq nd = 0.0 .
+
+  --- lognormal distribution
+  eq ld = sampleLogNormal(0.0,1.0) . --- miu, sigma 
+  eq rd = sampleLogNormal(0.0,1.0) . 
+---  eq rd = sampleLogNormal(0.0,1.0) * 100.0 .
+
+  --- weibull distribution
+---   eq ld = sampleWeibull(5.0,1.0) . 
+---   eq rd = sampleWeibull(3.0,300.0) .
+
+  --- or, ld = 0.0
+  --- in our model, local delay seems to be local "processing" delay,
+  --- which is negligible compared to the distributed data communication
+  --- thus, the settings in our experiments could be:
+---  eq ld = 0.0 .
+---  eq rd = sampleLogNormal(0.0,1.0) .
+--- eq rd = sampleWeibull(5.0,1.0) .
+
+  inc FAULT-LIB .
+  vars SRCO DSTO : Address .
+  var CON : Content .
+  vars M1 M2 M3 M4 R1 R2 R31 R32 R41 R42 TF : Float .
+  var ASFAULT : AttributeSet .
+  var MLVULCL : ContentList . var MLVULOS : Addresses .
+  vars RID TID RID' TABLE M OID OID' A : Address .
+  vars RIDS RIDS' TIDS : Addresses .
+  vars AS AS' AS'' AS1 AS2 : AttributeSet .
+  vars TXNS TXNS' : ConfigList .
+  var K : Key .
+  var X : LocalVar .
+  var REPLICA-TABLE : ReplicaTable .
+  vars OPS OPS' OPS'' : OperationList .
+  vars V V' : Value .
+  var WS : WriteSet .
+  vars VARS VARS' : LocalVars .
+  vars RS DS RS' WRITES WRITES' READS : Versions .
+  vars LC VL VL' : KeyTimestamps .
+  var VERSION : Version .
+  vars TS TS' : Timestamp .
+  vars MD MD' KS : KeySet .
+  var VS : Versions .
+***
+  vars SQN SQN' : Float .
+  var EXPR : Expression .
+  var RT : KeyReplicas .
+  vars 1STGETS 1STGETS' : 1stGets .
+  vars 2NDGETS 2NDGETS' : 2ndGets .
+  vars VSTS CMTS VSTS' CMTS' : VoteSites .
+  vars T T1 T2 : Float .
+  var FLAG : Bool .
+  vars RECORD RECORD' : Record .
+  var DR : DcReplicas .
+  vars DC DC' : Address .
+  var KR : KeyReplicas .
+  vars RIDSS RIDSS' : AddressList .
+  var CONT : Content .
+  var N : Nat .
+  var SL : ScheduleList .
+
+  ***************************
+  *** RAMP-F with Clients ***
+  ***************************
+
+  ---??? simply consume "start" if no txn needs to start
+  crl [receiving-start-when-no-txn-to-start] :
+     < A : Client | gotTxns: emptyTxnList, AS >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     {T, start from A to A} {T | SL}
+   =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     < A : Client | gotTxns: emptyTxnList, AS > {T | SL} 
+  if MLnotFault(M1,R1) .
+
+ crl [start-ro-or-rw-txn] :
+     {T, start from A to A} 
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+     < M : Monitor | log: RECORD, AS2 >
+     < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+     < A : Client | gotTxns: (< TID : Txn | operations: OPS,
+											1stGetSites: 1STGETS, AS > ;; TXNS),
+                    executing: noActor,
+					dc: DC, AS' >
+     {T | SL}
+   =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (start(TID) @ T)) >
+     < M : Monitor | log: (RECORD ; record(TID,T,0.0,empty,empty,false)), AS2 >
+     < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+     < A : Client | gotTxns: TXNS,
+                    executing: < TID : Txn | operations: OPS,
+											 1stGetSites: (1STGETS ; 1st(TID,add1st(OPS,REPLICA-TABLE,DR,DC))), AS >,
+					dc: DC, AS' >
+     insertList({T | SL},genGets(A,TID,OPS,REPLICA-TABLE,DR,DC,T))
+     if (not write-only(OPS)) 
+    /\ MLnotFault(M1,R1) .
+	 
+  op write-only : OperationList -> Bool .
+  eq write-only((OPS (OID X :=read K) OPS')) = false .
+  eq write-only(OPS) = true [owise] .
+  
+  *** sticky: to local datacenter replica  
+  op add1st : OperationList ReplicaTable DcReplicas Address -> Addresses .
+  eq add1st(((OID X :=read K) OPS),[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) =
+       RID ; add1st(OPS,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) .
+  eq add1st((write(OID,K,EXPR) OPS),[KR],DR,DC) = add1st(OPS,[KR],DR,DC) .
+  eq add1st(nil,[KR],DR,DC) = nullAd .
+  
+  op genGets : Address Address OperationList ReplicaTable DcReplicas Address Float -> ScheduleList .
+  eq genGets(A,TID,((OID X :=read K) OPS),[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,T) = 
+       genGets(A,TID,OPS,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,T)
+       ; [T + ld, get(TID,K,eptTS,DC,A) from A to RID, 0] .  
+  eq genGets(A,TID,(write(OID,K,EXPR) OPS),[KR],DR,DC,T) =
+       genGets(A,TID,OPS,[KR],DR,DC,T) .
+  eq genGets(A,TID,nil,[KR],DR,DC,T) = nil .
+
+
+  crl [receive-get] :
+      < M : Monitor | concurReads: TIDS, AS2 >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < TABLE : Table | datacenter: DR, AS >
+      < RID : Replica | datastore: VS,
+                        latestCommit: LC, AS' >
+      {T, get(TID,K,TS,DC,A) from A to RID}
+      {T | SL}
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < M : Monitor | concurReads:  
+	    (if TS == eptTS 
+		   then TIDS 
+		   else if $hasMapping(LC,K) 
+		           then if LC[K] less-than TS
+		                  then (TIDS ; TID) 
+				          else TIDS fi
+		           else if TS == ts(0,0.0)
+		                  then TIDS
+				          else (TIDS ; TID) fi fi fi), AS2 >		 
+      < TABLE : Table | datacenter: DR, AS >
+      < RID : Replica | datastore: VS,
+                        latestCommit: LC, AS' >
+      if TS == eptTS
+	    then insertList({T | SL},[T + ld, response1(TID,vmatch(K,VS,LC),RID) from RID to A,0])
+	  	else insertList({T | SL},[T + ld, response2(TID,vmatch(K,VS,TS),RID) from RID to A,0])
+	    fi 
+  if MLnotFault(M1,R1) .
+
+
+  op inDC : Address Address DcReplicas -> Bool .
+  eq inDC(RID,DC,(DR ; dc(DC,(RID ; RIDS)))) = true .
+  eq inDC(RID,DC,DR) = false [owise] .
+  
+  
+  op vmatch : Key Versions KeyTimestamps -> Version .
+  op vmatch : Key Versions Timestamp -> Version .
+  
+  eq vmatch(K,(version(K,V,TS,MD),VS),(K |-> TS,LC)) = version(K,V,TS,MD) .
+  eq vmatch(K,VS,LC) = version(K,[0],ts(0,0.0),empty) [owise] .  
+  --- ??? deal with "K not in LC", namely, the first txn has reads
+  eq vmatch(K,(version(K,V,TS,MD),VS),TS) = version(K,V,TS,MD) .
+  eq vmatch(K,VS,TS) = version(K,[0],ts(0,0.0),empty) [owise] .  
+  --- this should never apply since the 2nd-round read will fetch the version which has been prepared
+  
+  
+  op _less-than_ : Timestamp Timestamp -> Bool .
+  eq ts(RID,SQN) less-than ts(RID',SQN') =
+          if SQN < SQN'
+            then true
+            else if SQN == SQN' and RID < RID'
+                   then true
+                   else false
+                 fi
+          fi .
+
+
+ crl [receive-response1] :
+     < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+     < A : Client | executing: < TID : Txn | operations: (OPS (OID X :=read K) OPS'),
+                                             readSet: RS,
+                                             localVars: VARS,
+						                     1stGetSites: 1STGETS,
+						                     2ndGetSites: 2NDGETS,
+											 latest: VL, AS >, 
+					dc: DC, AS' >
+     {T, response1(TID,version(K,V,TS,MD),RID') from RID' to A}
+     {T | SL}
+   =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     < M : Monitor | log: (RECORD ; record(TID,T1,0.0,(RS, version(K,V,TS,MD)),WRITES,false) ; RECORD'), AS2 >
+     < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+     if 1STGETS'[TID] == nullAd
+	   then < A : Client  | executing: < TID : Txn | operations: (OPS (OID X :=read K) OPS'),
+                                              readSet: (RS, version(K,V,TS,MD)),
+                                              localVars: insert(X,V,VARS),  --- useless for read-only txns
+						                      1stGetSites: 1STGETS',
+											  2ndGetSites: (2NDGETS ; 2nd(TID,RIDS)),
+											  latest: lat(VL,MD,TS), AS >, 
+							dc: DC, AS' >
+            insertList({T | SL}, gen2ndGets(TID,lat(VL,MD,TS),(RS, version(K,V,TS,MD)),A,REPLICA-TABLE,DR,DC,T)
+            ; [T + nd,commit-reads from A to A,0]	)	  
+	   else < A : Client  | executing: < TID : Txn | operations: (OPS (OID X :=read K) OPS'),
+                                             readSet: (RS, version(K,V,TS,MD)),
+                                             localVars: insert(X,V,VARS),
+						                     1stGetSites: 1STGETS',
+											 2ndGetSites: 2NDGETS,
+											 latest: lat(VL,MD,TS), AS >, 
+							dc: DC, AS' >	{T | SL}
+	 fi									
+     if 1STGETS' := remove(TID,RID',1STGETS) /\
+		RIDS := 2ndSites(lat(VL,MD,TS),(RS, version(K,V,TS,MD)),A,REPLICA-TABLE,DR,DC) 
+    /\ MLnotFault(M1,R1) .
+
+
+  op gen2ndGets : Address KeyTimestamps Versions Address ReplicaTable DcReplicas Address Float -> ScheduleList .  
+  eq gen2ndGets(TID,(K |-> TS',VL),(version(K,V,TS,MD),RS),A,
+  	 	[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,T) 
+   = gen2ndGets(TID,(K |-> TS',VL),RS,A,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,T) ; 
+       (if TS less-than TS'
+         then [T + ld , get(TID,K,TS',DC,A) from A to RID,0]
+		 else nil 
+	   fi) .
+  eq gen2ndGets(TID,VL,RS,A,REPLICA-TABLE,DR,DC,T) = nil [owise] .  --- if K is not in VL
+  eq gen2ndGets(TID,VL,empty,A,REPLICA-TABLE,DR,DC,T) = nil .  
+
+
+  op 2ndSites : KeyTimestamps Versions Address ReplicaTable DcReplicas Address -> Addresses .
+  eq 2ndSites((K |-> TS',VL),(version(K,V,TS,MD),RS),A,
+     	[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) 
+   = 2ndSites((K |-> TS',VL),RS,A,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) ;
+       (if TS less-than TS'
+          then RID
+          else nullAd
+        fi) .
+  eq 2ndSites(VL,RS,A,REPLICA-TABLE,DR,DC) = nullAd [owise] .  --- if K is not in VL
+  eq 2ndSites(VL,empty,A,REPLICA-TABLE,DR,DC) = nullAd .  
+ 
+	 
+  op _[_] : 1stGets Address -> Addresses .
+  eq (1st(TID,RIDS) ; 1STGETS)[TID] = RIDS . 
+  
+  op _[_] : 2ndGets Address -> Addresses .
+  eq (2nd(TID,RIDS) ; 2NDGETS)[TID] = RIDS .
+  
+  op remove : Address Address 1stGets -> 1stGets .
+  eq remove(TID,RID,(1st(TID,(RID ; RIDS)) ; 1STGETS)) =
+       1st(TID,RIDS) ; 1STGETS .
+  eq remove(TID,RID,1STGETS) = 1STGETS [owise] .
+  
+  op remove : Address Address 2ndGets -> 2ndGets .
+  eq remove(TID,RID,(2nd(TID,(RID ; RIDS)) ; 2NDGETS)) =
+       2nd(TID,RIDS) ; 2NDGETS .
+  eq remove(TID,RID,2NDGETS) = 2NDGETS [owise] .
+  
+
+  op lat : KeyTimestamps KeySet Timestamp -> KeyTimestamps .
+  eq lat(VL,(K,MD),TS) = lat(insert(K,maxts(VL,K,TS),VL),MD,TS) .
+  eq lat(VL,empty,TS) = VL .
+	
+
+  op maxts : KeyTimestamps Key Timestamp -> Timestamp .
+  eq maxts(LC,K,TS) = if $hasMapping(LC,K)
+                        then if LC[K] less-than TS
+                               then TS
+                               else LC[K]
+                             fi
+                        else TS
+                      fi .
+				
+					  
+  crl [receive-response2] :
+     < M : Monitor | log: (RECORD ; record(TID,T1,0.0,(READS,version(K,V',TS',MD')),WRITES,false) ; RECORD'), AS2 >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     < A : Client | executing: < TID : Txn | operations: (OPS (OID X :=read K) OPS'),
+                                             readSet: (RS,version(K,V',TS',MD')),
+                                             localVars: VARS,
+								     		 2ndGetSites: 2NDGETS, AS >, AS' >
+     {T, response2(TID,version(K,V,TS,MD),RID') from RID' to A}
+     {T | SL}
+   => 
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     < M : Monitor | log: (RECORD ; record(TID,T1,0.0,(READS,version(K,V,TS,MD)),WRITES,false) ; RECORD'), AS2 >   
+     < A : Client | executing: < TID : Txn | operations: (OPS (OID X :=read K) OPS'),
+                                             readSet: (RS,version(K,V,TS,MD)),
+                                             localVars: insert(X,V,VARS),
+								 			 2ndGetSites: remove(TID,RID',2NDGETS), AS >, AS' >
+     insertList({T | SL},[T + nd, commit-reads from A to A,0]) 
+  if MLnotFault(M1,R1) .
+		
+  --- only consider read-only here!
+ crl [commit-reads] :
+     {T, commit-reads from A to A} {T | SL}
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+     < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 > 
+     < A : Client | executing: < TID : Txn | 1stGetSites: 1STGETS,
+						                     2ndGetSites: 2NDGETS, AS >,
+                    committed: TXNS, AS' >
+   =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commit(TID) @ T)) >
+     < M : Monitor | log: (RECORD ; record(TID,T1,T,READS,WRITES,true) ; RECORD'), AS2 >
+     < A : Client | executing: noActor,
+                    committed: (TXNS ;; < TID : Txn | 1stGetSites: 1STGETS,
+			   	                                      2ndGetSites: 2NDGETS, AS >), AS' >
+     insertList({T | SL},[T + nd, start from A to A,0])  ---??? "start"
+     if 1STGETS[TID] == nullAd /\
+        2NDGETS[TID] == nullAd 
+    /\ MLnotFault(M1,R1) .
+		
+		
+ crl [not-ready-to-commit-reads] :
+     {T, commit-reads from A to A} {T | SL}
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+     < A : Client | executing: < TID : Txn | 1stGetSites: 1STGETS,
+                                             2ndGetSites: 2NDGETS, AS >, AS' >
+  =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < A : Client | executing: < TID : Txn | 1stGetSites: 1STGETS,
+                                            2ndGetSites: 2NDGETS, AS >, AS' >
+    {T | SL}
+    if 1STGETS[TID] =/= nullAd or
+       2NDGETS[TID] =/= nullAd 
+    /\ MLnotFault(M1,R1) .
+	  
+
+  *** reads finish!!
+  *** writes start from here!
+
+  crl [start-wo-txn] :
+      {T, start from A to A}  {T | SL} 
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : @TES:TimedEvents >
+      < M : Monitor | log: RECORD, AS2 >
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < A : Client | gotTxns: (< TID : Txn | operations: OPS,
+                                             localVars: VARS, 
+ 										     txnSqn: SQN, 
+ 											 voteSites: VSTS, AS > ;; TXNS),
+                     executing: noActor,
+ 	        		 dc: DC, AS' >
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (start(TID) @ T)) >
+      < M : Monitor | log: (RECORD ; record(TID,T,0.0,empty,WRITES,false)), AS2 >
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < A : Client | gotTxns: TXNS,
+                     executing: < TID : Txn | operations: OPS,
+                                              localVars: VARS,
+ 											  txnSqn: T,
+ 											  voteSites: (VSTS ; voteSites(TID,addVotes(OPS,REPLICA-TABLE,DR,DC))), AS >,
+ 	    			 dc: DC, AS' >
+      insertList({T | SL},genPuts(A,TID,OPS,T,VARS,REPLICA-TABLE,DR,DC))
+      if write-only(OPS) /\
+         WRITES := ws(OPS,A,T,VARS) 
+    /\ MLnotFault(M1,R1) .
+
+   op addVotes : OperationList ReplicaTable DcReplicas Address -> Addresses .
+   eq addVotes((write(OID,K,EXPR) OPS),[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) =
+        RID ; addVotes(OPS,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) .
+   eq addVotes(((OID X :=read K) OPS),[KR],DR,DC) = addVotes(OPS,[KR],DR,DC) .
+   eq addVotes(nil,[KR],DR,DC) = nullAd .  
+  
+   op genPuts : Address Address OperationList Float LocalVars ReplicaTable DcReplicas Address -> ScheduleList .	
+   op $genPuts : Address Address OperationList Float LocalVars ReplicaTable DcReplicas Address OperationList -> ScheduleList .	
+   eq genPuts(A,TID,OPS,SQN,VARS,[KR],DR,DC) = $genPuts(A,TID,OPS,SQN,VARS,[KR],DR,DC,OPS) .
+   eq $genPuts(A,TID,(write(OID,K,EXPR) OPS),SQN,VARS,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,(OPS' write(OID,K,EXPR) OPS'')) =
+        $genPuts(A,TID,OPS,SQN,VARS,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,(OPS' write(OID,K,EXPR) OPS'')) ; 
+        [SQN + ld, prepare(TID,version(K,eval(EXPR,VARS),ts(A,SQN),md(OPS' OPS'')),DC,A) from A to RID, 0] .
+   eq $genPuts(A,TID,((OID X :=read K) OPS),SQN,VARS,[KR],DR,DC,OPS') =
+        $genPuts(A,TID,OPS,SQN,VARS,[KR],DR,DC,OPS') .
+   eq $genPuts(A,TID,nil,SQN,VARS,[KR],DR,DC,OPS') = nil .
+  
+   op ws : OperationList Address Float LocalVars -> Versions .
+   op $ws : OperationList Address Float LocalVars OperationList -> Versions .
+   eq ws(OPS,RID,SQN,VARS) = $ws(OPS,RID,SQN,VARS,OPS) .
+   eq $ws((write(OID,K,EXPR) OPS),RID,SQN,VARS,(OPS' write(OID,K,EXPR) OPS'')) = 
+        version(K,eval(EXPR,VARS),ts(RID,SQN),md(OPS' OPS'')), 
+        $ws(OPS,RID,SQN,VARS,(OPS' write(OID,K,EXPR) OPS'')) .
+   eq $ws(((OID X :=read K) OPS),RID,SQN,VARS,OPS') =
+        $ws(OPS,RID,SQN,VARS,OPS') .
+   eq $ws(nil,RID,SQN,VARS,OPS') = empty .	
+  
+   op md : OperationList -> KeySet .
+   eq md((write(OID,K,EXPR) OPS)) = K, md(OPS) .
+   eq md(((OID X :=read K) OPS)) = md(OPS) .
+   eq md(nil) = empty .	 
+   
+   crl [receive-prepare] :
+      < TABLE : Table | datacenter: DR, AS >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < RID : Replica | datastore: VS, AS' >
+      {T, prepare(TID,VERSION,DC,A) from A to RID} {T | SL}
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < TABLE : Table | datacenter: DR, AS >
+      < RID : Replica | datastore: (VS,VERSION), AS' >
+      insertList({T | SL},[T + ld, prepare-reply(TID,true,RID) from RID to A,0]) 
+  if MLnotFault(M1,R1) .
+
+---(
+---two-phase writes
+  crl [receive-prepare-reply] :
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < A : Client | executing: < TID : Txn | operations: OPS,
+ 	                                         txnSqn: SQN,
+ 											 voteSites: VSTS,
+ 											 commitSites: CMTS, AS >,
+ 					dc: DC, AS' >
+      {T, A <- prepare-reply(TID,FLAG,RID')}  --- FLAG is always true in RAMP
+    =>
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      if VSTS'[TID] == empty  --- all votes received
+        then < A : Client | executing: < TID : Txn | operations: OPS,
+ 	                                                txnSqn: SQN,
+ 						                            voteSites: noVS,
+ 						                            commitSites: (CMTS ; voteSites(TID,addVotes(OPS,REPLICA-TABLE,DR,DC))), AS >,
+ 						   dc: DC, AS' >
+             genCommits(A,TID,OPS,SQN,REPLICA-TABLE,DR,DC)
+        else < A : Client | executing: < TID : Txn | operations: OPS,
+ 	                                                txnSqn: SQN,
+ 						                            voteSites: VSTS',
+ 						                            commitSites: CMTS, AS >,                    
+ 						   dc: DC, AS' >
+      fi 
+    if VSTS' := remove(TID,RID',VSTS) .
+   
+
+   op _[_] : VoteSites Address -> Addresses .
+   eq (voteSites(TID,RIDS) ; VSTS)[TID] = RIDS . 
+
+   op remove : Address Address VoteSites -> VoteSites .
+   eq remove(TID,RID,(voteSites(TID,(RID ; RIDS)) ; VSTS)) =
+        voteSites(TID,RIDS) ; VSTS .
+   eq remove(TID,RID,VSTS) = VSTS [owise] .
+  
+   op genCommits : Address Address OperationList Float ReplicaTable DcReplicas Address -> Config .
+   eq genCommits(A,TID,(write(OID,K,EXPR) OPS),SQN,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC) =
+        genCommits(A,TID,OPS,SQN,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC)
+        [ld * float(length(msg2string(commit(TID,ts(A,SQN),DC,A)))), RID <- commit(TID,ts(A,SQN),DC,A)] .
+   eq genCommits(A,TID,((OID X :=read K) OPS),SQN,[KR],DR,DC) = genCommits(A,TID,OPS,SQN,[KR],DR,DC) .
+   eq genCommits(A,TID,nil,SQN,[KR],DR,DC) = null .
+
+
+   rl [receive-commit] :
+      < TABLE : Table | datacenter: DR, AS >
+      < RID : Replica | datastore: VS,
+                        latestCommit: LC, AS' >
+      {T, RID <- commit(TID,ts(A,SQN),DC,A)}
+    =>
+      < TABLE : Table | datacenter: DR, AS >
+      < RID : Replica | datastore: VS,
+                        latestCommit: cmt(LC,VS,ts(A,SQN)), AS' >
+      [if inDC(RID,DC,DR) then ld * float(length(msg2string(committed(TID,RID))))
+	     else rd * float(length(msg2string(committed(TID,RID)))) fi, A <- committed(TID,RID)] .
+	 
+	 
+   op cmt : KeyTimestamps Versions Timestamp -> KeyTimestamps .
+   eq cmt(LC,VS,TS) = $cmt(LC,keyFilter(VS,TS),TS) .
+   op $cmt : KeyTimestamps KeySet Timestamp -> KeyTimestamps .
+   eq $cmt(LC,(K,KS),TS) = $cmt(insert(K,maxts(LC,K,TS),LC),KS,TS) .
+   eq $cmt(LC,empty,TS) = LC .
+  
+   op keyFilter : Versions Timestamp -> KeySet . 
+   eq keyFilter((version(K,V,TS,MD),VS),TS) = K, keyFilter(VS,TS) .
+   eq keyFilter(VS,TS) = empty [owise] .
+
+   op maxts : KeyTimestamps Key Timestamp -> Timestamp .
+   eq maxts(LC,K,TS) = if $hasMapping(LC,K)
+                            then if LC[K] less-than TS
+                                   then TS
+                                   else LC[K]
+                                 fi
+                            else TS
+                          fi . 
+
+  crl [receive-committed] :
+      < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 >
+ 	  < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < A : Client | executing: < TID : Txn | commitSites: CMTS, AS >,
+                     committed: TXNS, AS' >
+      {T, A <- committed(TID,RID')}
+    =>
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      if CMTS'[TID] == empty  --- all "committed" received
+        then < M : Monitor | log: (RECORD ; record(TID,T1,T,READS,WRITES,true) ; RECORD'), AS2 >
+             < A : Client | executing: noActor,
+                            committed: (TXNS ;; < TID : Txn | commitSites: CMTS', AS >), AS' >
+             [nd, A <- start]  
+        else < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 >
+             < A : Client | executing: < TID : Txn | commitSites: CMTS', AS >,
+                            committed: TXNS, AS' >
+      fi
+      if CMTS' := remove(TID,RID',CMTS) .
+)
+
+
+--- one-phase write, i.e., asynch commits
+  crl [receive-prepare-reply-1] :
+      < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 >
+    < monitor : Monitor | events : @TES:TimedEvents >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < A : Client | executing: < TID : Txn | operations: OPS,
+                                  txnSqn: SQN,
+                                  voteSites: VSTS,
+                                  commitSites: CMTS, AS >,
+            committed: TXNS,
+            dc: DC, AS' >
+      {T, prepare-reply(TID,FLAG,RID') from RID' to A} {T | SL}  --- FLAG is always true in RAMP
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+    < monitor : Monitor | events : (@TES:TimedEvents ; (commit(TID) @ T)) >
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < M : Monitor | log: (RECORD ; record(TID,T1,T,READS,WRITES,true) ; RECORD'), AS2 >
+      < A : Client | executing: noActor,
+            committed: (TXNS ;; < TID : Txn | operations: OPS,
+                                  txnSqn: SQN,
+                                  voteSites: noVS,
+                                  commitSites: (CMTS ; voteSites(TID,addVotes(OPS,REPLICA-TABLE,DR,DC))), AS >),
+            dc: DC, AS' >
+      insertList({T | SL},genCommits(A,TID,OPS,SQN,REPLICA-TABLE,DR,DC,T) ;
+        [T + nd, start from A to A,0])
+    if VSTS' := remove(TID,RID',VSTS) /\ VSTS'[TID] == nullAd 
+    /\ MLnotFault(M1,R1) .
+
+  crl [receive-prepare-reply-2] :
+      < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < A : Client | executing: < TID : Txn | operations: OPS,
+                                txnSqn: SQN,
+                                voteSites: VSTS,
+                                commitSites: CMTS, AS >,
+            committed: TXNS,
+            dc: DC, AS' >
+      {T, prepare-reply(TID,FLAG,RID') from RID' to A} {T | SL}  --- FLAG is always true in RAMP
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < TABLE : Table | table: REPLICA-TABLE, datacenter: DR, AS1 >
+      < M : Monitor | log: (RECORD ; record(TID,T1,0.0,READS,WRITES,false) ; RECORD'), AS2 >
+      < A : Client | executing: < TID : Txn | operations: OPS,
+                                txnSqn: SQN,
+                                voteSites: VSTS',
+                                commitSites: CMTS, AS >,   
+            committed: TXNS,                 
+            dc: DC, AS' > {T | SL}
+    if VSTS' := remove(TID,RID',VSTS) /\ VSTS'[TID] =/= nullAd 
+    /\ MLnotFault(M1,R1) .
+   
+
+   op _[_] : VoteSites Address -> Addresses .
+   eq (voteSites(TID,RIDS) ; VSTS)[TID] = RIDS . 
+
+   op remove : Address Address VoteSites -> VoteSites .
+   eq remove(TID,RID,(voteSites(TID,(RID ; RIDS)) ; VSTS)) =
+        voteSites(TID,RIDS) ; VSTS .
+   eq remove(TID,RID,VSTS) = VSTS [owise] .
+  
+   op genCommits : Address Address OperationList Float ReplicaTable DcReplicas Address Float -> ScheduleList .
+   eq genCommits(A,TID,(write(OID,K,EXPR) OPS),SQN,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,T) =
+        genCommits(A,TID,OPS,SQN,[replicatingSites(K,(RIDSS ;; RID ;; RIDSS')) ;; KR],(DR ; dc(DC,(RID ; RIDS))),DC,T) ;
+        [T + ld , commit(TID,ts(A,SQN),DC,A) from A to RID,0] .
+   eq genCommits(A,TID,((OID X :=read K) OPS),SQN,[KR],DR,DC,T) = genCommits(A,TID,OPS,SQN,[KR],DR,DC,T) .
+   eq genCommits(A,TID,nil,SQN,[KR],DR,DC,T) = nil .
+
+
+   crl [receive-commit] :
+      < TABLE : Table | datacenter: DR, AS >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < RID : Replica | datastore: VS,
+                        latestCommit: LC, AS' >
+      {T, commit(TID,ts(A,SQN),DC,A) from A to RID} {T | SL}
+    =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < TABLE : Table | datacenter: DR, AS >
+      < RID : Replica | datastore: VS,
+                        latestCommit: cmt(LC,VS,ts(A,SQN)), AS' >
+      insertList({T | SL},[T + ld, committed(TID,RID) from RID to A,0]) 
+  if MLnotFault(M1,R1) .
+	 
+	 
+   op cmt : KeyTimestamps Versions Timestamp -> KeyTimestamps .
+   eq cmt(LC,VS,TS) = $cmt(LC,keyFilter(VS,TS),TS) .
+   op $cmt : KeyTimestamps KeySet Timestamp -> KeyTimestamps .
+   eq $cmt(LC,(K,KS),TS) = $cmt(insert(K,maxts(LC,K,TS),LC),KS,TS) .
+   eq $cmt(LC,empty,TS) = LC .
+  
+   op keyFilter : Versions Timestamp -> KeySet . 
+   eq keyFilter((version(K,V,TS,MD),VS),TS) = K, keyFilter(VS,TS) .
+   eq keyFilter(VS,TS) = empty [owise] .
+
+   op maxts : KeyTimestamps Key Timestamp -> Timestamp .
+   eq maxts(LC,K,TS) = if $hasMapping(LC,K)
+                            then if LC[K] less-than TS
+                                   then TS
+                                   else LC[K]
+                                 fi
+                            else TS
+                          fi . 
+
+  crl [receive-committed] :
+      < A : Client | committed: (TXNS ;; < TID : Txn | commitSites: CMTS, AS > ;; TXNS'), AS' >
+    < injector : Injector | 
+      MLmood : M1, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      {T, committed(TID,RID') from RID' to A} {T | SL}
+   =>
+    < injector : Injector | 
+      MLmood : rand, MLfaultRate : R1, MLvulnerableContent : MLVULCL, MLvulnerableAddress : MLVULOS,
+      ASFAULT >
+      < A : Client | committed: (TXNS ;; < TID : Txn | commitSites: remove(TID,RID',CMTS), AS > ;; TXNS'), AS' >
+      {T | SL} 
+  if MLnotFault(M1,R1) .
+endm

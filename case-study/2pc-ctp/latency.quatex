@@ -1,0 +1,2 @@
+AvgL() = { s.rval(0) } ;
+eval E[ # AvgL() ] ; 

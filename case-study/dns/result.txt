@@ -1,0 +1,8 @@
+Confidence (alpha): 0.01
+Threshold (delta): 0.01
+Samples generated: 60
+SMC result: 6000.000053963677
+Memory usage: 128.586 MB
+F&M-trans time used: 0.026716 seconds
+SMC time used: 3.628904 seconds
+Total time used: 3.655620 seconds

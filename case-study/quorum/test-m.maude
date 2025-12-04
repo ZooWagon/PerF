@@ -1,0 +1,67 @@
+load m-output/init-quorum
+
+mod TEST-M is
+
+  inc INIT-QUORUM .
+
+  eq OPSLIMIT = 100 .
+  eq initrun = run(initconf,5000.0) .
+
+  var TE : TimedEvent . vars TES TES1 TES2 : TimedEvents . 
+  var E : Event . vars ES ES1 ES2 : Events .
+  var A : Address . var AS : AttributeSet .
+  vars T T1 T2 : Float . var C : Config .
+  var AC : ActorConfig . var SL : ScheduleList .
+  var ID : Id . var N : Nat .
+
+  op totalTxn : Config -> Float .
+  op $totalTxn : TimedEvents -> Float .
+  eq totalTxn(< monitor : Monitor | events : TES > C) = $totalTxn(TES) .
+  eq $totalTxn(TES1 ; (ES1 ; commitTxn(A,ID) ; ES2 @ T) ; TES2)
+    = 1.0 + $totalTxn(TES1 ; TES2) .
+  eq $totalTxn(TES) = 0.0 [owise]  .
+
+  op totalTime : Config -> Float .
+  op $totalTime : TimedEvents Float -> Float .
+  eq totalTime(< monitor : Monitor | events : TES > C) = $totalTime(TES,0.0) .
+  eq $totalTime(((ES @ T1) ; TES), T) = $totalTime(TES, T1) .
+  eq $totalTime(empty, T) = T [owise] .
+
+  op throughput : Config -> Float .
+  eq throughput(C) = 
+    totalTxn(C) / totalTime(C) .
+
+  op totalFailTxn : Config -> Float .
+  op $totalFailTxn : TimedEvents -> Float .
+  eq totalFailTxn(< monitor : Monitor | events : TES > C) = $totalFailTxn(TES) .
+  eq $totalFailTxn(TES1 ; (ES1 ; commitReadFail(A,ID) ; ES2 @ T) ; TES2)
+    = 1.0 + $totalFailTxn(TES1 ; TES2) .
+  eq $totalFailTxn(TES) = 0.0 [owise]  .
+
+  op totalReadTxn : Config -> Float .
+  op $totalReadTxn : TimedEvents -> Float .
+  eq totalReadTxn(< monitor : Monitor | events : TES > C) = $totalReadTxn(TES) .
+  eq $totalReadTxn(TES1 ; (ES1 ; commitRead(A,ID) ; ES2 @ T) ; TES2)
+    = 1.0 + $totalReadTxn(TES1 ; TES2) .
+  eq $totalReadTxn(TES) = 0.0 [owise]  .
+
+  op getTES : Config -> TimedEvents .
+  eq getTES(< monitor : Monitor | events : TES > C) = TES .
+
+  op lenTES : TimedEvents -> Nat .
+  eq lenTES(TE ; TES) = 1 + lenTES(TES) .
+  eq lenTES(empty) = 0 .
+
+endm
+
+set clear rules off .
+
+---(
+rew getTES(initrun) .
+rew throughput(initrun) .
+rew totalTxn(initrun) .
+rew totalTime(initrun) .
+rew totalReadTxn(initrun) .
+rew totalFailTxn(initrun) .
+rew lenTES(getTES(initrun)) .
+)

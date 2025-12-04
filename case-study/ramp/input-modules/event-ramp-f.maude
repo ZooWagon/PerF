@@ -1,0 +1,16 @@
+load ../events
+
+mod EVENT-RAMP-F is 
+  inc EVENTS .
+
+  *** user-specified interesting events 
+  ops start commit ctp-imm ctp-late : Address -> Event [ctor] .
+
+  var TID : Address .
+
+  *** rule-specific mapping
+  eq eventMap = ['start-ro-or-rw-txn, start(TID)] ;; ['commit-reads, commit(TID)] ;;
+     ['start-wo-txn, start(TID)] ;; ['receive-committed-1, commit(TID)] ;;
+     ['receive-prepare-reply-1, commit(TID)] ;;
+     ['ctp-receive-commit, ctp-late(TID)] ;; ['ctp-reply, ctp-imm(TID)] [nonexec] .
+endm

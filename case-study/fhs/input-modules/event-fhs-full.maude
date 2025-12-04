@@ -1,0 +1,22 @@
+load ../events
+load fhs
+
+mod EVENT-FHS-FULL is 
+  inc EVENTS .
+  inc BLOCKCHAIN .
+
+  *** user-specified interesting events 
+  ops start propose-v propose-n recv-safe-b commit commit-p : Address Block -> Event [ctor format (ni d)] .
+  ops send-n recv-n recv-nn : Address Nat -> Event [ctor format (ni d)] .
+  var B : Block . var A1 : Address . var V2 : Nat .
+
+  *** rule-specific mapping
+  eq eventMap = ['commit-block, commit(A1,B)] ;;
+      ['commit-block-p, commit-p(A1,B)] ;;
+      ['primary-vote, propose-v(A1,B)] ;;
+      ['primary-nextview,propose-n(A1,B)] ;;
+      ['recv-prepare-safe,recv-safe-b(A1,B)] ;;
+      ['tmo-nextview,send-n(A1,V2)] ;;
+      ['recv-nextview,recv-n(A1,V2)] ;;
+      ['recv-nextview-new,recv-nn(A1,V2)] [nonexec] .
+endm

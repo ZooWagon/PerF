@@ -1,0 +1,44 @@
+load ../fault-lib
+
+mod FAULT-DNS is
+  inc FAULT-LIB .
+
+  op DEID : -> Id .
+  op DENA : -> Name .
+  op DERT : -> RType .
+  op DEDBA : -> List{Record} .
+  op DEDBB : -> List{Record} .
+  op DEDBC : -> List{Record} .
+  op DEN : -> Nat .
+
+  var CO : Content . vars CL CL2 : ContentList .
+  vars DEID1 DEID2 : Id . vars DENA1 DENA2 : Name . vars DERT1 DERT2 : RType . 
+  vars DEDBA1 DEDBA2 : List{Record} .
+  vars DEDBB1 DEDBB2 : List{Record} .
+  vars DEDBC1 DEDBC2 : List{Record} .
+  vars DEN1 DEN2 : Nat .
+  eq DEisVulnerableContent(response(DEID1,DENA1,DEDBA1,DEDBB1,DEDBC1,DEN1),
+    (CL :: response(DEID2,DENA2,DEDBA2,DEDBB2,DEDBC2,DEN2) :: CL2)) = true .
+
+  eq injectorObj =
+  < injector : Injector | 
+    DEvulnerableRule : 'delayed-nameserver-recv-query-unbounded,
+    DEmood : 0.999, DEfaultRate : 0.99,
+    DEtime : 1000.0,
+    DEdelayedMsg : nil, 
+    DEvulnerableContent : response(DEID,DENA,DEDBA,DEDBB,DEDBC,DEN),
+    DEvulnerableRecv : rAddr,
+    DEvulnerableSrc : addrNStargetANS,
+    faultLog : nil,
+    faultRegi : (de),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm
+  --- eq DEisVulnerableContent(query(DEID1,DENA1,DERT1),(CL :: query(DEID2,DENA2,DERT2) :: CL2)) = true .
+  --- addrNStargetANS
+  --- eq DEisVulnerableContent(response(DEID1,DENA1,DEDBA1,DEDBB1,DEDBC1,DEN1),
+  ---   (CL :: response(DEID2,DENA2,DEDBA2,DEDBB2,DEDBC2,DEN2) :: CL2)) = true .
+  --- rAddr
+  --- eq DEisVulnerableContent(matchDown(DEID1,DENA1,DERT1,zoneTargetANS),
+  ---   (CL :: matchDown(DEID2,DENA2,DERT2,zoneTargetANS) :: CL2)) = true .
+  --- rAddr

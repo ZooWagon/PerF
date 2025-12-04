@@ -1,0 +1,2 @@
+avgLatency( ) = { s.rval(1) } ;
+eval E[ # avgLatency( ) ] ;

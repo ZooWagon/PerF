@@ -1,0 +1,16 @@
+load ../events
+
+mod EVENT-RAFT is 
+  inc EVENTS .
+  
+  *** user-specified interesting events 
+  op new-leader : Address -> Event [ctor] .
+  op die-leader : -> Event [ctor] .
+	
+  var lea : Address .
+				
+  *** rule-specific mapping
+  eq eventMap = ['success-leader, new-leader(lea)] ;; 
+                ['make-crush, die-leader] [nonexec] .
+
+endm

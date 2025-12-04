@@ -1,0 +1,6 @@
+load test-m.maude
+rew throughput(initrun) .
+rew totalTxn(initrun) .
+rew totalReadTxn(initrun) .
+rew totalFailTxn(initrun) .
+q

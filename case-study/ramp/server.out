@@ -1,0 +1,50 @@
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		pvesta-test.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	1317417307
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+		     \||||||||||||||||||/
+		   --- Welcome to Maude ---
+		     /||||||||||||||||||\
+	   Maude 2.7.1 built: Jun 27 2016 16:35:16
+	    Copyright 1997-2016 SRI International
+		   Fri Jan  5 11:42:02 2024
+Server: Running the simulation batches on demand... Please wait.
+Server performed 52 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		pvesta-test.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	489451043
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+Server: Running the simulation batches on demand... Please wait.
+Server performed 161 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...
+
+Parameters: 
+model: 		pvesta-test.maude
+model arguments: 	
+formula: 	latency.quatex
+alpha: 		0.01
+beta: 		0.0
+seed: 	371598543
+sims: 		60
+Params: 		0.05 0.01 0.01 10000000 0.0 0 
+Server: Running the simulation batches on demand... Please wait.
+Server performed 163 batch(es) of 60 simulation(s) each.
+
+Server is now accepting a new connection...

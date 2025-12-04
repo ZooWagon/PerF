@@ -1,0 +1,10 @@
+load ../fault-lib
+load ../f-output/2pc-ctp
+
+mod FAULT-NU is
+  inc FAULT-LIB .
+  inc 2PC-CTP .
+  inc NAT .
+
+  eq injectorObj = null .
+endm

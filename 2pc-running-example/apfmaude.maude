@@ -1,0 +1,182 @@
+---(
+apfmaude
+define actor model for fault-lib
+)
+set show advisories off .
+
+fmod ACTOR-MODEL-F is
+  pr NAT .
+  pr FLOAT .
+  pr QID .
+
+  sort Oid .
+  subsort Nat < Oid .
+
+  --- Set of Oid
+  sort OidSet .
+  subsort Oid < OidSet .
+  op empty : -> OidSet .
+  op __ : OidSet OidSet -> OidSet [assoc comm id: empty] .
+
+  --- List of Oid
+  sort OidList .
+  subsort Oid < OidList .
+  op nilOL : -> OidList .
+  op _:_ : OidList OidList -> OidList [assoc id: nilOL] .
+
+  --- set of Oid for fault-lib
+  sort OidSetF .
+  subsort Oid < OidSetF .
+  op emptyOSF : -> OidSetF .
+  op _^^_ : OidSetF OidSetF -> OidSetF [ctor assoc comm id: emptyOSF] .
+
+  --- list of Oid for fault-lib
+  sort OidListF .
+  subsort Oid < OidListF .
+  op nilOLF : -> OidListF [ctor] .
+  op _^:^_ : OidListF OidListF -> OidListF [ctor assoc id: nilOLF] .
+
+  --- ActorConfig represents a soup of actors containing no messages
+  sorts Actor Config ActorConfig .  
+  sorts Msg LabelMsg ActiveMsg TimeMsg .
+  sorts ActorType Attribute AttributeSet Content .
+
+  subsorts LabelMsg ActiveMsg Msg TimeMsg < Config .
+  subsort Actor < ActorConfig < Config .
+  subsort Attribute < AttributeSet .
+
+  op null : -> ActorConfig .
+  op __ : ActorConfig ActorConfig -> ActorConfig [assoc comm id: null] .
+  op __ : Config Config -> Config [assoc comm id: null] .
+
+  --- Messages
+  --- fault msg for injector inner communication
+  sort FMsg .
+  subsort FMsg < Config .
+  op [_,_] : Msg Qid -> LabelMsg .
+  op [_,_] : Float Msg -> TimeMsg .
+  op [_,_,_] : Float Msg Qid -> FMsg .
+  op sch : FMsg -> FMsg .
+  op {_,_} : Float Msg -> ActiveMsg .
+
+  --- Propagate Msgs
+  vars O O' : Oid .
+  var OS : OidSet .   var CO : Content .
+  op propagate_from_to_ : Content Oid OidSet -> Config . 
+  eq propagate CO from O' to (O OS) = 
+    (CO from O' to O) (propagate CO from O' to OS) .
+  eq propagate CO from O' to empty = null .
+
+
+  op _from_to_ : Content Oid Oid -> Msg .
+  op _to_      : Content Oid     -> Msg .
+
+  --- Actors:
+  op <_:_|_> : Oid ActorType AttributeSet -> Actor [format (ni d d d d d d d)] .
+
+  --- Attributes can be used to add user defined data to an actor
+  op mt : -> AttributeSet .
+  op _,_ : AttributeSet AttributeSet -> AttributeSet [assoc comm id: mt] .
+endfm
+view Order from TRIV to ACTOR-MODEL-F is sort Elt to Msg . endv
+
+load probability
+mod SCHEDULER is
+  pr ACTOR-MODEL-F .
+  pr PROBABILITY .
+
+  sort ScheduleList .
+  subsort FMsg < ScheduleList .
+
+  --- for PVeStA, scheduler should be this format
+  sort Scheduler .
+  subsort Scheduler < Config .
+  op {_|_} : Float ScheduleList -> Scheduler [format (n d d n d d)] .
+
+  op Scheduler : -> ActorType .
+  op sch : -> Oid .
+  op nilSL : -> ScheduleList .
+  op _;_ : ScheduleList ScheduleList -> ScheduleList [assoc id: nilSL format(d d n d)] .
+  op clock :_ : Float -> Attribute .
+  op msgQueue :_ : ScheduleList -> Attribute [format(d d d n)] .
+  --- op insert : Actor FMsg -> Actor .
+  op insert : ScheduleList FMsg -> ScheduleList .
+
+  --- Emit a message, perform a rule, until time-limit
+  op run : Config Float -> Config .
+  op step : Config -> Config [iter] .
+
+  vars GT LIMIT : Float .
+  vars T1 T2 : Float .
+  vars SL SL' : ScheduleList .
+  vars M1 M2 : Msg .
+  var C : Config .
+  vars O O' : Oid . var CO : Content .
+  var AT : ActorType .
+  var AS : AttributeSet .
+  var AC : ActorConfig .
+  vars N1 N2 : Nat .
+  vars L1 L2 : Qid .
+
+  op md : -> Float .  --- message propagate delay
+  eq md = lognormal(0.0, 1.0, rand) .
+  --- insert a msg to the sch, attach md
+  eq [ CO from O to O', L1 ] { GT | SL }
+      = { GT | insert( SL , [ GT + md, CO from O to O', L1 ]) } .
+  --- means object's local process, no md
+  eq [ CO to O', L1 ] { GT | SL }
+      = { GT | insert( SL , [ GT , CO to O', L1 ]) } .
+  --- if sch msg, add required delay T1
+  eq sch([ T1, M1, L1 ]) { GT | SL }
+      = { GT | insert( SL , [ GT + T1, M1, L1])} .
+
+  eq insert(([ T1, M1, L1 ] ; SL) , [ T2, M2, L2 ]) =
+    --- if (t1 < t2) or ((t1 == t2)) and lt(M1,M2) then
+    if (T1 < T2) then
+      [ T1, M1, L1 ] ; insert(SL, [ T2, M2, L2 ])
+    else
+      ([ T2, M2, L2 ] ; [ T1, M1, L1 ]  ; SL)
+    fi .
+  eq insert(nilSL , [ T2, M2, L2 ]) = [ T2, M2, L2 ] .
+
+  eq step(C { GT | ([ T1, M1, L1 ] ; SL)}) 
+      = [ T1, M1, L1 ] C { T1 | SL } .
+
+  --- tick
+  ceq run(AC { GT | SL }, LIMIT) =
+    (if (GT <= LIMIT and SL =/= nilSL) then
+      run(step(AC { GT | SL }), LIMIT)
+    else
+      AC { GT | SL }
+    fi)
+    if not eagerEnabled(AC) .
+  
+  op eagerEnabled : ActorConfig -> Bool .
+  eq eagerEnabled(AC) = false [owise] .
+
+endm
+
+
+mod APFMAUDE is
+  pr SCHEDULER .
+
+  --- Operations supported by PVeStA
+  op initState : -> Config .
+  op sat : Nat Config -> Bool .
+  op val : Nat Config -> Float .
+  op tick : Config -> Config .
+  op getTime : Config -> Float .
+  op LIMIT : -> Float .
+  eq LIMIT = 1000000.0 .   --- default LIMIT
+
+  var C : Config .
+  var GT : Float .
+  var SL : ScheduleList .
+  var AS : AttributeSet .
+
+  --- the tick here is interface of PVeStA,
+  --- the tick in paper is 'ceq run' in SCHEDULER before
+  eq tick(C) = run(C, LIMIT) .
+  eq getTime(C { GT | SL }) =  GT .
+
+endm

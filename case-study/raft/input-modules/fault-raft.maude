@@ -1,0 +1,24 @@
+load ../fault-lib
+
+
+mod FAULT-RAFT is
+  inc FAULT-LIB .
+
+
+  op geneVulCon : Nat -> ContentList [ctor] .
+  eq geneVulCon(s N) = BecomeLeader(1,node(N)) :: geneVulCon(N) .
+  eq geneVulCon(0) = nilCL .
+
+  eq injectorObj =
+  < injector : Injector | 
+    CRmood : 0.99, CRstatus : standby, 
+        CRcrushRate : 1.0, CRrebootRate : 0.0, CRcrushingObjRecord : nonOid,
+        CRinitStore : CRmakeDictConfig(init-client(N) init-ring(N) ,null),
+        CRvulnerableContent : BecomeLeader(1,node(1)),
+        CRvulnerableObjs : node(1), 
+        CRcrushingObj : nonOid, CRcutMsg : nil,
+    faultLog : nil,
+    faultRegi : (cr),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm

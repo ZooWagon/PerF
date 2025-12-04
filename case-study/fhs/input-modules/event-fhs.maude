@@ -1,0 +1,15 @@
+load ../events
+load fhs
+
+mod EVENT-FHS is 
+  inc EVENTS .
+  inc BLOCKCHAIN .
+
+  *** user-specified interesting events 
+  ops commit commit-p : Address Block -> Event [ctor format (ni d)] .
+  var B : Block . var A1 : Address . var V2 : Nat .
+
+  *** rule-specific mapping
+  eq eventMap = ['commit-block, commit(A1,B)] ;;
+      ['commit-block-p, commit-p(A1,B)] [nonexec] .
+endm

@@ -1,0 +1,16 @@
+load ../fault-lib
+
+mod FAULT-FHS is
+  inc FAULT-LIB .
+  inc NAT .
+  
+  eq injectorObj =
+  < injector : Injector | 
+    PAstatus : standby, PAoccurTime : 10.0, PAdurationTime : 60.0,
+    PAmood : rand, PAcutMsg : nil, PAallActors : (0 ^:^ 1 ^:^ 2 ^:^ 3),
+    PApart : (0 ^:^ 1 :|: 2 ^:^ 3),
+    faultLog : nil,
+    faultRegi : (pa),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm

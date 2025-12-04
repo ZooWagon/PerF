@@ -1,0 +1,17 @@
+load ../fault-lib
+load ../f-output/2pc-ctp
+
+mod FAULT-ML is
+  inc 2PC-CTP .
+  inc FAULT-LIB .
+  inc NAT .
+
+  eq faultRegister = ml .
+
+  eq injectorObj =
+    < msgloss : Injector | MLfaultRate : 0.3, 
+      MLvulnerableRl : ('start-committing ^:^ 'start-aborting), 
+      MLvulnerableRecv : cohort(0), 
+      MLvulnerableSrc : coord, 
+      MLeatMsg : nilSL > .
+endm

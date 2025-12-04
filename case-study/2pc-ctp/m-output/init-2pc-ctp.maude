@@ -1,0 +1,43 @@
+load ../input-modules/fault-ml.maude
+---(
+2PC-CTP
+quantitative model, origin apmaude
+2024.3.17 11:00
+)
+load 2pc-ctp
+
+mod INIT-2PC-CTP is
+
+  inc 2PC-CTP .
+  inc NAT .
+  op init : Nat -> Config .
+  op init : Nat AddressList Nat -> Config .
+  vars N M : Nat .  var OS : AddressList .
+  var C : Config .
+  eq init(N) = init(N, nilAL, N) .
+  eq init(0, OS, N) = init-coord(OS) .
+  eq init(s N, OS, M) = init-cohort(M, N) init(N, (cohort(N) ; OS), M) .
+
+  --- gene M th of N cohorts
+  op init-cohort : Nat Nat -> Actor .
+  eq init-cohort(N, M) = < cohort(M) : Cohort | 
+    txnStateRecord : nullTS, neighbour : geneNeighbour(N,M), waitQuery : nullTR > .
+  
+  --- geneNeighbour(allCohortNum, myNum)
+  op geneNeighbour : Nat Nat -> AddressList .
+  eq geneNeighbour(s N, N) = geneNeighbour(N, s N) .
+  eq geneNeighbour(0, M) = nilAL .
+  eq geneNeighbour(s N, M) = cohort(N) ; geneNeighbour(N, M) [owise] .
+
+  op init-coord : AddressList -> Actor .
+  eq init-coord(OS) = 
+    < coord : Coord | txnIdIter : 0, txnReplyRecord : nullTR, 
+      cohorts : OS, txnStateRecord : nullTS > .
+    
+  op initconf : -> Config .
+  inc FAULT-ML .
+  eq initconf = init(2) < scheduler : Scheduler | clock : 0.0, scheduledMsg : nilSL > {0.0, (TriggerTxn from coord to coord)} 
+    < log : Monitor | events : empty >
+    injectorObj .
+
+endm

@@ -1,0 +1,482 @@
+load ../apfmaude
+load ../fault-lib
+
+mod FAULT-MSGLOSS is
+  inc FAULT-INTERFACE .
+  --- abbr. ml . signal: 2
+  op msgloss : -> Address .
+  op ml : -> FaultType .
+  eq faultSignal(ml) = 2 .
+
+  --- lost msg
+  op MLeatMsg :_ : ScheduleList -> Attribute [ctor] .
+  --- rate for doing ml-vul, set by initconf, default 1.0
+  op MLfaultRate :_ : Float -> Attribute [ctor] .
+  --- the recvers in list may suffer from msg loss
+  op MLvulnerableRecv :_ : AddressListF -> Attribute [ctor] .
+  --- the src in list may suffer from msg loss
+  op MLvulnerableSrc :_ : AddressListF -> Attribute [ctor] .
+  --- the rule label in list may suffer from msg loss
+  op MLvulnerableRl :_ : QidListF -> Attribute [ctor] .
+
+  var SL : ScheduleList . var MSG : Msg .
+  var AS : AttributeSet . var T : Float .
+  var Q : Qid . var FU : Nat .
+  
+  --- func: a msg may lose if msg rl is in MLvulnerableRl 
+  --- *and* msg recv is in MLvulnerableRecv 
+  --- *and* msg src is in MLvulnerableSrc
+  op ml-vul : -> FaultRuleName .
+  eq faultPriority(ml-vul) = 33 .   --- msg-faded
+  rl [msgloss-vulnerable] :
+    FR([T, MSG, Q, FU])
+    faultEnable(ml-vul)
+    < msgloss : Injector | MLeatMsg : SL, AS >
+  =>
+    < msgloss : Injector | 
+      MLeatMsg : (SL ; [T, MSG, Q, faultUndergo(FU,faultSignal(ml))]), AS > .
+
+  vars O O2 : Address . vars AL AL2 : AddressListF .
+  vars QL QL2 : QidListF . vars M R : Float .
+  --- isEnableML-vul(mood, loss rate, msg rl, vul rl, msg src, vul src, msg recv, vul recv)
+  op isEnableML-vul : Float Float Qid QidListF Address AddressListF Address AddressListF -> Bool .
+  eq isEnableML-vul(M,R,Q,QL,O,AL,O2,AL2) =
+    (M <= R) 
+    and isVulnerableRl(Q,QL) 
+    and isVulnerableAddress(O,AL)
+    and isVulnerableAddress(O2,AL2) .
+  eq isEnableML-vul(M,R,Q,QL,O,AL,O2,AL2) = false [owise] .
+
+endm
+
+mod FAULT-COMBINE is
+  inc APFMAUDE .
+  inc FAULT-INTERFACE .
+  inc FAULT-MSGLOSS .
+  ---   inc FAULT-MSGDUP .
+  ---   inc FAULT-PARTITION .
+  ---   --- inc FAULT-CRASH .
+  ---   --- inc FAULT-DELAY .
+  ---   --- inc FAULT-EQUIVOCATION .
+  ---   --- inc FAULT-TEMPERING .
+
+  vars SRCA RECVA : Address . var MSGCO : Content . var MSGQID : Qid . var MSGFU : Nat .
+  vars T M : Float . vars S : Nat .
+  var ML-R : Float . var ML-QL : QidListF . vars ML-AL ML-AL2 : AddressListF . var ML-AS : AttributeSet .
+  ---   var MD-R : Float . var MD-QL : QidListF . vars MD-AL MD-AL2 : AddressListF . var MD-AS : AttributeSet .
+  ---   vars PA-TO PA-TD : Float . vars PA-P1 PA-P2 PA-ALL : AddressListF . var PA-FS : PAFaultStatus . 
+  ---   var PA-QL : QidListF . vars PA-AL PA-AL2 : AddressListF . var PA-AS : AttributeSet .
+
+  op FP : ScheduleMsg Float -> FaultPotentialMsg .
+  eq FP([T, (MSGCO from SRCA to RECVA), MSGQID, MSGFU]) = 
+    FP([T, (MSGCO from SRCA to RECVA), MSGQID, MSGFU],rand) .
+
+  crl [mediate-enable] :
+    FP([T, (MSGCO from SRCA to RECVA), MSGQID, MSGFU], M)
+    < msgloss : Injector | MLfaultRate : ML-R, MLvulnerableRl : ML-QL, MLvulnerableRecv : ML-AL, MLvulnerableSrc : ML-AL2, ML-AS >
+  ---     < msgdup : Injector | MDfaultRate : MD-R, MDvulnerableRl : MD-QL, MDvulnerableRecv : MD-AL, MDvulnerableSrc : MD-AL2, MD-AS >
+  ---     < partition : Injector | PAstatus : PA-FS, PAoccurTime : PA-TO, PAdurationTime : PA-TD, PApart : (PA-P1 :|: PA-P2), 
+  ---       PAallActors : PA-ALL, PAvulnerableRl : PA-QL, PAvulnerableRecv : PA-AL, PAvulnerableSrc : PA-AL2, PA-AS >
+  =>
+    < msgloss : Injector | MLfaultRate : ML-R, MLvulnerableRl : ML-QL, MLvulnerableRecv : ML-AL, MLvulnerableSrc : ML-AL2, ML-AS >
+  ---     < msgdup : Injector | MDfaultRate : MD-R, MDvulnerableRl : MD-QL, MDvulnerableRecv : MD-AL, MDvulnerableSrc : MD-AL2, MD-AS >
+  ---     < partition : Injector | PAstatus : PA-FS, PAoccurTime : PA-TO, PAdurationTime : PA-TD, PApart : (PA-P1 :|: PA-P2), 
+  ---       PAallActors : PA-ALL, PAvulnerableRl : PA-QL, PAvulnerableRecv : PA-AL, PAvulnerableSrc : PA-AL2, PA-AS >
+    FR([T, (MSGCO from SRCA to RECVA), MSGQID, MSGFU])
+    geneFaultEnable(
+        geneFaultRuleReadyList( nullFRN
+          :: ml-vul
+  ---           :: md-vul
+  ---           :: pa-make-t :: pa-make-rl :: pa-cut :: pa-reco-t
+          , false
+          :: isEnableML-vul(M,ML-R,MSGQID,ML-QL,SRCA,ML-AL2,RECVA,ML-AL)
+  ---           :: isEnableMD-vul(M,MD-R,MSGQID,MD-QL,SRCA,MD-AL2,RECVA,MD-AL,MSGFU) 
+  ---           :: isEnablePA-make-t(PA-FS,PA-TO,T) 
+  ---           :: isEnablePA-make-rl(PA-FS,MSGQID,PA-QL,SRCA,PA-AL2,RECVA,PA-AL)
+  ---           :: isEnablePA-cut(PA-FS,SRCA,RECVA,(PA-P1 :|: PA-P2),(PA-TO + PA-TD),T)
+  ---           :: isEnablePA-reco-t(PA-FS,(PA-TO + PA-TD),T)
+          ))
+    if false
+      or isEnableML-vul(M,ML-R,MSGQID,ML-QL,SRCA,ML-AL2,RECVA,ML-AL)
+  ---       or isEnableMD-vul(M,MD-R,MSGQID,MD-QL,SRCA,MD-AL2,RECVA,MD-AL,MSGFU) 
+  ---       or isEnablePA-make-t(PA-FS,PA-TO,T) 
+  ---       or isEnablePA-make-rl(PA-FS,MSGQID,PA-QL,SRCA,PA-AL2,RECVA,PA-AL)
+  ---       or isEnablePA-cut(PA-FS,SRCA,RECVA,(PA-P1 :|: PA-P2),(PA-TO + PA-TD),T)
+  ---       or isEnablePA-reco-t(PA-FS,(PA-TO + PA-TD),T)
+      or false .
+    
+  crl [release-unenable] :
+    FP([T, (MSGCO from SRCA to RECVA), MSGQID, MSGFU], M)
+    < msgloss : Injector | MLfaultRate : ML-R, MLvulnerableRl : ML-QL, MLvulnerableRecv : ML-AL, MLvulnerableSrc : ML-AL2, ML-AS >
+  ---     < msgdup : Injector | MDfaultRate : MD-R, MDvulnerableRl : MD-QL, MDvulnerableRecv : MD-AL, MDvulnerableSrc : MD-AL2, MD-AS >
+  ---     < partition : Injector | PAstatus : PA-FS, PAoccurTime : PA-TO, PAdurationTime : PA-TD, PApart : (PA-P1 :|: PA-P2), 
+  ---       PAallActors : PA-ALL, PAvulnerableRl : PA-QL, PAvulnerableRecv : PA-AL, PAvulnerableSrc : PA-AL2, PA-AS >
+  =>
+    < msgloss : Injector | MLfaultRate : ML-R, MLvulnerableRl : ML-QL, MLvulnerableRecv : ML-AL, MLvulnerableSrc : ML-AL2, ML-AS >
+  ---     < msgdup : Injector | MDfaultRate : MD-R, MDvulnerableRl : MD-QL, MDvulnerableRecv : MD-AL, MDvulnerableSrc : MD-AL2, MD-AS >
+  ---     < partition : Injector | PAstatus : PA-FS, PAoccurTime : PA-TO, PAdurationTime : PA-TD, PApart : (PA-P1 :|: PA-P2), 
+  ---       PAallActors : PA-ALL, PAvulnerableRl : PA-QL, PAvulnerableRecv : PA-AL, PAvulnerableSrc : PA-AL2, PA-AS >
+    {T, (MSGCO from SRCA to RECVA)}
+    if true
+      and not isEnableML-vul(M,ML-R,MSGQID,ML-QL,SRCA,ML-AL2,RECVA,ML-AL)
+  ---       and not isEnableMD-vul(M,MD-R,MSGQID,MD-QL,SRCA,MD-AL2,RECVA,MD-AL,MSGFU) 
+  ---       and not isEnablePA-make-t(PA-FS,PA-TO,T)
+  ---       and not isEnablePA-make-rl(PA-FS,MSGQID,PA-QL,SRCA,PA-AL2,RECVA,PA-AL)
+  ---       and not isEnablePA-cut(PA-FS,SRCA,RECVA,(PA-P1 :|: PA-P2),(PA-TO + PA-TD),T)
+  ---       and not isEnablePA-reco-t(PA-FS,(PA-TO + PA-TD),T)
+      and true .
+
+  --- geneFaultRuleReadyList(FRNL,BL)
+  --- generate a ready fault rule list, extract FRNL for according Bool in BL is true  
+  op geneFaultRuleReadyList : FaultRuleNameList BoolList -> FaultRuleNameList [ctor] .
+  var BL : BoolList . var B : Bool . var FRN : FaultRuleName . var FRNL : FaultRuleNameList .
+  ceq geneFaultRuleReadyList((FRN :: FRNL),(B :: BL)) = FRN :: geneFaultRuleReadyList(FRNL,BL)
+    if B [owise] .
+  ceq geneFaultRuleReadyList((FRN :: FRNL),(B :: BL)) = geneFaultRuleReadyList(FRNL,BL)
+    if not B [owise] .
+  eq geneFaultRuleReadyList(nilFRNL,nilBL) = nilFRNL .
+
+  --- generate faultEnable from FaultRuleNameList, indicating fault rule be selected
+  op geneFaultEnable : FaultRuleNameList -> FaultFlag [ctor] .
+  --- $geneFaultEnable(FaultRuleNameList,currentPri,highestScore,currentScore,FaultRuleName)
+  op $geneFaultEnable : FaultRuleNameList Nat Float Float FaultRuleName -> FaultFlag [ctor] .
+  eq geneFaultEnable(FRNL) = $geneFaultEnable(FRNL,999,0.0,rand,nullFRN) .
+  var PRI : Nat . vars R1 R2 : Float . var FRN2 : FaultRuleName .
+  --- high pri
+  ceq $geneFaultEnable((FRN :: FRNL),PRI,R1,R2,FRN2) = $geneFaultEnable(FRNL,faultPriority(FRN),R1,rand,FRN)
+    if faultPriority(FRN) < PRI .
+  --- low pri
+  ceq $geneFaultEnable((FRN :: FRNL),PRI,R1,R2,FRN2) = $geneFaultEnable(FRNL,PRI,R1,rand,FRN2)
+    if faultPriority(FRN) > PRI .
+  --- equal pri
+  ceq $geneFaultEnable((FRN :: FRNL),PRI,R1,R2,FRN2) = $geneFaultEnable(FRNL,PRI,R1,rand,FRN2)
+    if faultPriority(FRN) == PRI /\ R1 > R2 .
+  ceq $geneFaultEnable((FRN :: FRNL),PRI,R1,R2,FRN2) = $geneFaultEnable(FRNL,PRI,R2,rand,FRN)
+    if faultPriority(FRN) == PRI /\ R1 <= R2 .
+  --- select fault rule
+  eq $geneFaultEnable(nilFRNL,PRI,R1,R2,FRN) = faultEnable(FRN) [owise] .
+endm
+
+mod FAULT-LIB is 
+
+  inc FAULT-COMBINE .
+endm
+
+---(
+2PC-CTP
+CTP not send unknown
+2024.3.18 14:13
+)
+load ../probability
+
+mod INTERFACE-2PC-CTP is
+  inc FAULT-LIB .
+  pr NAT .
+  pr PROBABILITY .
+
+  sorts TxnState TxnStates .
+  subsort TxnState < TxnStates .
+  op nullTS : -> TxnState .
+  op _;_ : TxnStates TxnStates -> TxnStates [assoc prec 30 id: nullTS] .
+  
+  --- Nat: txn id.
+  sort Phase .
+  ops Preparing Committing Committed Aborting Aborted : -> Phase [ctor] .
+  op _--_ : Phase Nat -> TxnState [prec 20] .
+  op txnStateRecord :_ : TxnStates -> Attribute [ctor] .
+
+  op TriggerTxn : -> Content [ctor] .
+  ops Prepare Commit Abort PreYes PreNo Ack : Nat -> Content [ctor] .
+  --- CTP msg
+  ops PreTimeout DecideQuery DecideReplyCommit DecideReplyAbort DecideReplyUnknown : Nat -> Content [ctor] .
+
+  op TimeoutValue : -> Float .
+  eq TimeoutValue = 5.0 .
+
+  op txnTerminal : -> Nat .
+  eq txnTerminal = 10 .
+
+  op cohortYesRate : -> Float .
+  eq cohortYesRate = 0.9 .
+
+  op d : -> Float .  --- message delay
+  eq d = lognormal(0.0, 1.0,rand) .
+
+  eq pd = lognormal(0.0, 1.0,rand) .
+  eq LIMIT = 200.0 .
+endm 
+
+mod COORDINATOR is 
+  inc FAULT-LIB .
+  pr INTERFACE-2PC-CTP .
+  op Coord : -> ActorType [ctor] .
+  op coord : -> Address [ctor] .
+
+  op txnIdIter :_ : Nat -> Attribute [ctor] .
+  op cohorts :_ : AddressList -> Attribute [ctor] .
+
+  sorts TxnReply TxnReplies .
+  op _--_ : Address Content -> TxnReply .
+  subsort TxnReply < TxnReplies .
+  op nullTR : -> TxnReply .
+  op _;_ : TxnReplies TxnReplies -> TxnReplies [assoc id: nullTR] .
+  op txnReplyRecord :_ : TxnReplies -> Attribute [ctor] .
+
+  vars O O2 : Address . vars AL AL2 : AddressList .
+  var AS AS2 : AttributeSet .
+  vars TID N N2 : Nat . var T : Float .
+  var AC : ActorConfig .
+  var SL : ScheduleList .
+  var TS : TxnStates . vars TR TR2 : TxnReplies .
+  --- start a new txn, send prepare
+  crl [prepare] : 
+    {T, (TriggerTxn from O to O)}
+    < O : Coord | txnIdIter : TID, cohorts : AL, txnStateRecord : TS, AS > 
+  => MarkRuleLabel('prepare,  
+    < O : Coord | txnIdIter : TID, cohorts : AL, 
+      txnStateRecord : (TS ; (Preparing -- TID)), AS >
+    propagate Prepare(TID) from O to AL
+ 
+  ) if TID < txnTerminal .
+  crl [prepare-terminate] : 
+    {T, (TriggerTxn from O to O)}
+    < O : Coord | txnIdIter : TID, cohorts : AL, txnStateRecord : TS, AS > 
+  => MarkRuleLabel('prepare-terminate,  
+    < O : Coord | txnIdIter : TID, cohorts : AL, 
+      txnStateRecord : TS, AS >
+ 
+  ) if TID >= txnTerminal .
+  --- count a yes vote 
+  rl [recv-yes] : 
+    {T, (PreYes(TID) from O2 to O)}
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, AS >
+  => MarkRuleLabel('recv-yes,  
+    < O : Coord | txnIdIter : TID, txnReplyRecord : (TR ; O2 -- PreYes(TID)), AS >
+  ) .
+  --- rollback if no is received
+  rl [recv-no] : 
+    {T, (PreNo(TID) from O2 to O)}
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, AS >
+  => MarkRuleLabel('recv-no,  
+    < O : Coord | txnIdIter : TID, txnReplyRecord : (TR ; O2 -- PreNo(TID)), AS >
+  ) .
+
+  crl [start-committing] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing -- TID), AS >
+  => MarkRuleLabel('start-committing, 
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committing -- TID), AS >
+    propagate Commit(TID) from O to AL
+ 
+  ) if isAllReply(TR,TID,AL) and canCommit(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing -- TID), AS > AC) = true 
+  if isAllReply(TR,TID,AL) and canCommit(TR,TID,AL) .
+
+  crl [start-aborting] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing -- TID), AS >
+  => MarkRuleLabel('start-aborting, 
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborting -- TID), AS >
+    propagate Abort(TID) from O to AL
+ 
+  ) if isAllReply(TR,TID,AL) and not canCommit(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Preparing -- TID), AS > AC) = true 
+  if isAllReply(TR,TID,AL) and not canCommit(TR,TID,AL) .
+
+  op canCommit : TxnReplies Nat AddressList -> Bool .
+  eq canCommit((TR ; (O -- PreYes(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    canCommit((TR ; TR2),TID,(AL ; AL2)) [owise] .
+  eq canCommit(TR,TID,nilAL) = true .
+  eq canCommit((TR ; (O -- PreNo(TID)) ; TR2),TID,(AL ; O ; AL2)) = false .
+    
+  op isAllReply : TxnReplies Nat AddressList -> Bool .
+  eq isAllReply((TR ; (O -- PreYes(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    isAllReply((TR ; TR2),TID,(AL ; AL2)) .
+  eq isAllReply((TR ; (O -- PreNo(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    isAllReply((TR ; TR2),TID,(AL ; AL2)) .
+  eq isAllReply(TR,TID,nilAL) = true .
+  eq isAllReply(TR,TID,AL) = false [owise] .
+
+  rl [recv-ack] : 
+    {T, (Ack(TID) from O2 to O)}
+    < O : Coord | txnReplyRecord : TR, AS >
+  => MarkRuleLabel('recv-ack,  
+    < O : Coord | txnReplyRecord : (TR ; O2 -- Ack(TID)), AS >
+  ) .
+  
+  crl [commit] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committing -- TID), AS >
+    < scheduler : Scheduler | clock : T, AS2 >
+  => MarkRuleLabel('commit, 
+    < O : Coord | txnIdIter : (TID + 1), txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committed -- TID), AS >
+    < scheduler : Scheduler | clock : T, AS2 >
+    [0.0, (TriggerTxn from O to O)]
+ 
+  ) if isAllAck(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Committing -- TID), AS > AC) = true 
+  if isAllAck(TR,TID,AL) .
+
+  crl [abort] :
+    < O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborting -- TID), AS >
+    < scheduler : Scheduler | clock : T, AS2 >
+  => MarkRuleLabel('abort, 
+    < O : Coord | txnIdIter : (TID + 1), txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborted -- TID), AS >
+    < scheduler : Scheduler | clock : T, AS2 >
+    [0.0, (TriggerTxn from O to O)]
+ 
+  ) if isAllAck(TR,TID,AL) .
+
+  ceq eagerEnabled(< O : Coord | txnIdIter : TID, txnReplyRecord : TR, 
+      cohorts : AL, txnStateRecord : (TS ; Aborting -- TID), AS > AC) = true
+  if isAllAck(TR,TID,AL) .
+  
+  op isAllAck : TxnReplies Nat AddressList -> Bool .
+  eq isAllAck((TR ; (O -- Ack(TID)) ; TR2),TID,(AL ; O ; AL2)) = 
+    isAllAck((TR ; TR2),TID,(AL ; AL2)) .
+  eq isAllAck(TR,TID,nilAL) = true .
+  eq isAllAck(TR,TID,AL) = false [owise] .
+endm
+
+mod COHORT is
+  inc FAULT-LIB .
+  pr INTERFACE-2PC-CTP .
+  inc COORDINATOR .
+  op Cohort : -> ActorType [ctor] .
+  op cohort : Nat -> Address [ctor] .
+
+  op neighbour :_ : AddressList -> Attribute [ctor] .
+  op waitQuery :_ : TxnReplies -> Attribute [ctor] .
+
+  vars O O2 : Address . vars AL AL2 : AddressList .
+  var AS AS2 : AttributeSet .
+  vars N N2 : Nat . vars T M : Float .
+  var AC : ActorConfig .
+  var SL : ScheduleList . var AM : ActiveMsg .
+  vars TS TS2 TS3 : TxnStates . var P : Phase .
+  var TR : TxnReplies . var TXR : TxnReply . var CO : Content .
+  --- either vote yes or no
+  rl [reply] : 
+    {T, (Prepare(N) from O2 to O)}
+    < O : Cohort | txnStateRecord : TS, AS >
+   => MarkRuleLabel('reply,  
+    < O : Cohort | txnStateRecord : (TS ; Preparing -- N), AS >
+    [TimeoutValue, PreTimeout(N) from O to O]
+    if rand <= cohortYesRate then 
+      [d, PreYes(N) from O to O2]
+    else 
+      [d, PreNo(N) from O to O2]
+    fi
+  ) .
+
+  rl [ack-commit] : 
+    {T, (Commit(N) from O2 to O)} 
+    < O : Cohort | txnStateRecord : (TS ; P -- N ; TS3), waitQuery : TR, AS >
+  => MarkRuleLabel('ack-commit,  
+    < O : Cohort | txnStateRecord : (TS ; Committed -- N ; TS3), waitQuery : TR, AS >
+    [d, Ack(N) from O to O2] ReplyWaitQuery(TR,Commit(N),O)
+  ) .
+  rl [ack-abort] : 
+    {T, (Abort(N) from O2 to O)} 
+    < O : Cohort | txnStateRecord : (TS ; P -- N ; TS3), waitQuery : TR, AS >
+  => MarkRuleLabel('ack-abort,  
+    < O : Cohort | txnStateRecord : (TS ; Aborted -- N ; TS3), waitQuery : TR, AS >
+    [d, Ack(N) from O to O2] ReplyWaitQuery(TR,Abort(N),O)
+  ) .
+
+  --- ReplyWaitQuery(waitQuery, content(txnid), srcAddress)
+  op ReplyWaitQuery : TxnReplies Content Address -> Config .
+  eq ReplyWaitQuery((TR ; O2 -- DecideQuery(N)), Commit(N), O) 
+    = [d, DecideReplyCommit(N) from O to O2] ReplyWaitQuery(TR,Commit(N),O) .
+  eq ReplyWaitQuery((TR ; O2 -- DecideQuery(N)), Abort(N), O) 
+    = [d, DecideReplyAbort(N) from O to O2] ReplyWaitQuery(TR,Abort(N),O) .
+  --- eq ReplyWaitQuery((TR ; TXR), CO, O) = ReplyWaitQuery(TR, CO, O) [owise] .
+  ceq ReplyWaitQuery((TR ; O2 -- DecideQuery(N)), Commit(N2), O) 
+    = ReplyWaitQuery(TR, Commit(N2), O) if N =/= N2 [owise] .
+  ceq ReplyWaitQuery((TR ; O2 -- DecideQuery(N)), Abort(N2), O) 
+    = ReplyWaitQuery(TR, Abort(N2), O) if N =/= N2 [owise] .
+  eq ReplyWaitQuery(nullTR, CO, O) = null [owise] .
+
+  --- CTP
+  rl [decide-query] :
+    {T, PreTimeout(N) from O to O}
+    < O : Cohort | txnStateRecord : (TS ; (Preparing -- N) ; TS3), neighbour : AL, AS >
+  => MarkRuleLabel('decide-query, 
+    < O : Cohort | txnStateRecord : (TS ; (Preparing -- N) ; TS3), neighbour : AL, AS >
+    propagate DecideQuery(N) from O to AL
+  ) .
+  crl [decide-queried] :
+    {T, PreTimeout(N) from O to O}
+    < O : Cohort | txnStateRecord : (TS ; P -- N ; TS3), neighbour : AL, AS >
+  => MarkRuleLabel('decide-queried, 
+    < O : Cohort | txnStateRecord : (TS ; P -- N ; TS3), neighbour : AL, AS >
+ 
+  ) if P == Committed or P == Aborted .
+  rl [reply-query] :
+    {T, DecideQuery(N) from O2 to O}
+    < O : Cohort | txnStateRecord : TS, waitQuery : TR, AS >
+  => MarkRuleLabel('reply-query,  
+    < O : Cohort | txnStateRecord : TS, 
+      waitQuery : (TR ; replyQueryWait(TS,{T, DecideQuery(N) from O2 to O})), AS >
+    replyQuery(TS,{T, DecideQuery(N) from O2 to O})
+  ) .
+
+  --- replyQuery(TxnStates, Current AM)
+  op replyQuery : TxnStates ActiveMsg -> Config .
+  eq replyQuery(TS,AM) = null [owise] .
+  eq replyQuery((TS ; Committed -- N ; TS3), {T, DecideQuery(N) from O2 to O}) 
+    = [d, DecideReplyCommit(N) from O to O2] .
+  eq replyQuery((TS ; Aborted -- N ; TS3), {T, DecideQuery(N) from O2 to O}) 
+    = [d, DecideReplyAbort(N) from O to O2] .
+  eq replyQuery((TS ; Preparing -- N ; TS3), {T, DecideQuery(N) from O2 to O}) 
+    = null .
+  
+  --- replyQueryWait(TxnStates,  Current AM)
+  op replyQueryWait : TxnStates ActiveMsg -> TxnReplies .
+  eq replyQueryWait(TS,{T, DecideQuery(N) from O2 to O}) 
+    = (O2 -- DecideQuery(N)) [owise] .
+  eq replyQueryWait((TS ; Committed -- N ; TS3), {T, DecideQuery(N) from O2 to O}) 
+    = nullTR .
+  eq replyQueryWait((TS ; Aborted -- N ; TS3), {T, DecideQuery(N) from O2 to O}) 
+    = nullTR .
+  eq replyQueryWait((TS ; Preparing -- N ; TS3), {T, DecideQuery(N) from O2 to O}) 
+    = (O2 -- DecideQuery(N)) .
+  
+  crl [recv-query-commit] :
+    {T, DecideReplyCommit(N) from O2 to O}
+    < O : Cohort | txnStateRecord : (TS ; P -- N ; TS3), AS >
+  => MarkRuleLabel('recv-query-commit, 
+    < O : Cohort | txnStateRecord : (TS ; Committed -- N ; TS3), AS >
+    [d, (Ack(N) from O to coord)]
+ 
+  ) if P == Preparing or P == Committed .
+  crl [recv-query-abort] :
+    {T, DecideReplyAbort(N) from O2 to O}
+    < O : Cohort | txnStateRecord : (TS ; P -- N ; TS3), AS >
+  => MarkRuleLabel('recv-query-abort, 
+    < O : Cohort | txnStateRecord : (TS ; Aborted -- N ; TS3), AS >
+    [d, (Ack(N) from O to coord)]
+ 
+  ) if P == Preparing or P == Aborted .
+
+endm
+
+mod 2PC-CTP is
+  inc FAULT-LIB .
+  pr COHORT .
+  pr COORDINATOR .
+
+endm
+
+set clear rules off .

@@ -1,0 +1,16 @@
+load ../fault-lib
+
+mod FAULT-QUORUM-PA-5 is
+  inc FAULT-LIB .
+  inc NAT .
+  
+  eq injectorObj =
+  < injector : Injector | 
+    PAstatus : standby, PAoccurTime : 10.0, PAdurationTime : 5.0,
+    PAmood : rand, PAcutMsg : nil, PAallActors : (c1 ^:^ c2 ^:^ c3 ^:^ c4 ^:^ s1 ^:^ s2 ^:^ s3),
+    PApart : (c1 ^:^ c2 ^:^ c3 ^:^ c4 ^:^ s1 ^:^ s2 :|: s3),
+    faultLog : nil,
+    faultRegi : (pa),
+    faultMsg : null,
+    faultFlag : nonFF > .
+endm

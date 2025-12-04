@@ -1,0 +1,54 @@
+
+load m-output/init-2pc-ctp
+
+mod TEST-M is
+  inc INIT-2PC-CTP .
+
+  *** PVeStA interface
+  eq initState = 
+    initconf 
+    { 0.0 | nilSL } .
+  
+  var C : Config . var AS : AttributeSet .
+  var P : Phase . vars T T2 : Float . var TID : Nat .
+  var AC : ActorConfig . var SL : ScheduleList .
+  vars TES TES2 TES3 : TimedEvents .
+  vars E E1 E2 : Events .
+  
+  *** Quatex
+  eq val(0, C) = avglatency(C) .
+  eq val(1, C) = avgthoughput(C) .
+  eq val(5, C) = ptime(C) .
+  
+  op avglatency : Config -> Float .
+  ceq avglatency(< log : Monitor | events : TES > C) 
+    = totalLatency(TES) / numberOfTxns(TES) 
+  if numberOfTxns(TES) =/= 0.0 .
+  ceq avglatency(< log : Monitor | events : TES > C )
+    = 10.0
+  if numberOfTxns(TES) == 0.0 .
+
+  op avgthoughput : Config -> Float .
+  eq avgthoughput(< log : Monitor | events : TES > AC )
+    = numberOfTxns(TES) / totalLatency(TES) .
+
+  op ptime : Config -> Float .
+  eq ptime(AC) = getTime(AC) .
+
+  op totalLatency : TimedEvents -> Float .
+  eq totalLatency(TES ; (start(TID) @ T) ; TES2 ; (E ; commit(TID) ; E2 @ T2) ; TES3) 
+    = T2 - T + totalLatency(TES ; TES2 ; TES3) .
+  eq totalLatency(TES ; (start(TID) @ T) ; TES2 ; (E ; abort(TID) ; E2 @ T2) ; TES3)
+    = T2 - T + totalLatency(TES ; TES2 ; TES3) .
+  eq totalLatency(TES) = 0.0 [owise] .
+
+  op numberOfTxns : TimedEvents -> Float .
+  eq numberOfTxns(TES ; (start(TID) @ T) ; TES2 ; (E ; commit(TID) ; E2 @ T2) ; TES3) 
+    = 1.0 + numberOfTxns(TES ; TES2 ; TES3) .
+  eq numberOfTxns(TES ; (start(TID) @ T) ; TES2 ; (E ; abort(TID) ; E2 @ T2) ; TES3)
+    = 1.0 + numberOfTxns(TES ; TES2 ; TES3) .
+  eq numberOfTxns(TES) = 0.0 [owise] .
+
+endm
+
+set clear rules off .

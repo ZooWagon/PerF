@@ -1,0 +1,3 @@
+load test-m.maude
+rew getTES(initrun16) .
+q

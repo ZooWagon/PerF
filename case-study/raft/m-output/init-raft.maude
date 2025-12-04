@@ -1,0 +1,88 @@
+--- Raft, New Leader Election
+--- 2023.10.18 15:26
+load raft
+
+mod INIT-RAFT is 
+  inc RAFT .
+
+  --- first parameter is index, second is number of nodes 
+  op init-node : Nat Nat -> Config .
+  op make-neighbors : Nat Nat -> Addresses .
+  op add-one-modulo : Nat Nat -> Nat .
+  op get-majority : Nat -> Nat .
+  op get-minority : Nat -> Nat .
+  op make-timeout : Nat -> Float .
+  vars N N1 N2 : Nat .
+
+  --- helper methods to define node properties 
+  eq make-neighbors(0, 0) = nullAd .
+  eq make-neighbors(s N, 0) = node(0) .
+  eq make-neighbors(s N, s N) = make-neighbors(s N, N) .
+  eq make-neighbors(N2, s N) = node(s N) ; make-neighbors(N2, N) [owise] .
+
+  eq add-one-modulo(N1, s N1) = 0 .
+  eq add-one-modulo(N1, N2) = s N1 [owise] .
+
+  eq get-majority(s s N1) = 1 + get-majority(N1) .
+  eq get-majority(N1) = 1 [owise] .
+  eq get-minority(s s s N1) = 1 + get-minority(s N1) .
+  eq get-minority(N1) = 0 [owise] .
+
+  eq make-timeout(N1) = 100.0 [owise] .
+  --- eq make-timeout(N1) = 10.0 + rand * 2.0 [owise] .
+  eq make-timeout(1) = 50.0 .
+
+  --- initialize node with index N1 in total of N2 nodes 
+  ceq init-node(N1, s N2) = 
+    < node(N1) : FollowerNode | currentTerm : 0, 
+                                log : entry(0, 0, "startup"), 
+                                committed : entry(0, 0, "startup"), 
+                                neighbors : make-neighbors(N1, N2), 
+                                waiting : false, 
+                                majority : get-majority(s N2),
+                                number-neighbors : N2, 
+                                number-yes : 1, 
+                                number-response : 0,
+                                heartbeat : 0.0,
+                                heartbeat-timeout : make-timeout(N1) > 
+    if N1 =/= 0 .
+  ceq init-node(N1, s N2) = 
+    < node(N1) : LeaderNode | currentTerm : 0, 
+                                log : entry(0, 0, "startup"), 
+                                committed : entry(0, 0, "startup"), 
+                                neighbors : make-neighbors(N1, N2), 
+                                waiting : false, 
+                                majority : get-majority(s N2),
+                                number-neighbors : N2, 
+                                number-yes : 1, 
+                                number-response : 0,
+                                heartbeat : 0.0,
+                                heartbeat-timeout : make-timeout(N1) > 
+    if N1 == 0 .
+  op init-ring : Nat -> Config .
+  op init-ring : Nat Nat -> Config .
+  eq init-ring(N) = init-ring(0, N) .
+  eq init-ring(N, N) = null .
+  eq init-ring(N1, N2) = init-node(N1, N2) init-ring(N1 + 1, N2) [owise] .
+
+  op nonAd : -> Address .
+
+  var AS : AttributeSet .
+  op init-client : Nat -> Config .
+  eq init-client(s N) = 
+    < client : Client | live : make-neighbors(s N, N), leader : nonAd, currentTerm : 0, history : nullAd > .
+
+  op init : Nat -> Config .
+
+
+  op geneVulCon : Nat -> ContentList [ctor] .
+  eq geneVulCon(s N) = BecomeLeader(1,node(N)) :: geneVulCon(N) .
+  eq geneVulCon(0) = nilCL .
+
+  eq init(N) = init-client(N) init-ring(N) 
+    < monitor : Monitor | events : empty >
+    < injector : Injector | CRmood : 0.99, CRstatus : standby, CRcrushRate : 1.0, CRrebootRate : 0.0, CRcrushingObjRecord : nonOid, CRinitStore : CRmakeDictConfig(init-client(N) init-ring(N) ,null), CRvulnerableContent : BecomeLeader(1,node(1)), CRvulnerableObjs : node(1), CRcrushingObj : nonOid, CRcutMsg : nil, faultLog : nil, faultRegi : (cr), faultMsg : null, faultFlag : nonFF >
+    {0.0 | [0.0,BecomeLeader(0,node(0)) from node(0) to client,0]} .
+endm
+
+set clear rules off .

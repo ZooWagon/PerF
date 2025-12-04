@@ -1,0 +1,34 @@
+
+load m-output/init-raft
+
+mod TEST-M is
+  inc INIT-RAFT .
+
+  *** PVeStA interface
+  eq initState = init(5) .
+  
+  var C : Config . var AS : AttributeSet .
+  vars T T2 : Float . var O : Address .
+  var AC : ActorConfig . var SL : ScheduleList .
+  var S : Scheduler .
+  vars TES TES2 TES3 : TimedEvents .
+  
+  *** Quatex
+  eq val(0, AC S) = getElectTime(AC S) .
+  eq val(5, AC S) = ptime(AC S) .
+
+  op getElectTime : Config -> Float .
+  eq getElectTime(< monitor : Monitor | events : TES > AC {T | SL})
+    = electTime(TES) .
+
+  op ptime : Config -> Float .
+  eq ptime(AC {T | SL}) = T .
+
+  op electTime : TimedEvents -> Float .
+  eq electTime(TES ; (die-leader @ T) ; (new-leader(O) @ T2) ; TES3) 
+    = T2 - T .
+  eq electTime(TES) = 0.0 [owise] .
+
+endm
+
+set clear rules off .
