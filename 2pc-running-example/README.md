@@ -54,8 +54,8 @@ The SMC result of an example run is also in file [result.txt](result.txt)
 |-------------------------- |-------------|
 | `input-modules/`          | Original user-provided 2PC model and initialization modules, with fault and event configuration, which is `2pc.maude`,`init-2pc.maude`,`2pc-fault-config.maude`,`event-2pc.maude` |
 | `output-fault-comp/`      | Generated files after **model preprocessing** and **model composition** (faults injected). |
-| `output-moni-tran/`       | Generated files after **model transformation** (monitor instrumentation applied). |
-| `tool/`                   | Internal scripts used by PerF for processing this example. |
+| `output-moni-tran/`       | Generated files after **model transformation** (monitor added). |
+| `tool/`                   | Internal scripts used by PerF. |
 | `run.sh`                  | Main script to run PerF. |
 | `analysis-2pc.maude`      | Maude module defining analysis functions for SMC (e.g., average latency computation). |
 | `fault-injector.maude`    | Fault-injection library. |
