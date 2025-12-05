@@ -1,11 +1,11 @@
-# PerF: Predict Performance of Distributed System Models under Fault
+# PerF: Predicting the Performance of Distributed Systems under Faults from Their Formal Designs
 
 ## Introduction
 
 PerF is a command-line tool for automating fault injection on formal distributed system models written in Maude,
-enabling quantitative analysis of performance metrics(such as latency and throughput) for distributed system models under diverse faults.
+enabling quantitative analysis of performance metrics (such as latency and throughput) for distributed system models under diverse faults.
 
-Up to now, PerF supports seven representative faults, covering both benign and Byzantine fault behaviors commonly observed in realistic distributed environments
+Currently, PerF supports seven representative faults, covering both benign and Byzantine fault behaviors commonly observed in realistic distributed environments:
 
 - message loss
 - message duplication
@@ -15,16 +15,16 @@ Up to now, PerF supports seven representative faults, covering both benign and B
 - tampering
 - equivocation
 
-PerF also allows to configure which faults to inject and when to inject them, and provides a monitor that records events of interest at runtime, based on defined performance properties.
+PerF also allows users to configure which faults to inject and when to inject them, and provides a monitor that records events of interest at runtime, based on which users can define desired performance properties.
 
-Our design insight is that, all these faults can be viewed as manipulations of messages exchanged between actors in distributed system model, 
-It not only simplifies the modeling of individual faults 
+Our insight for the design of PerF is that all these faults can be viewed as manipulations of messages exchanged between actors in distributed system model.  
+This not only simplifies the modeling of individual faults 
 but also provide capabilities for extending the tool with new faults.
 
 ## Pipeline of PerF
 ![Pipeline of PerF](./images/pipeline-perf.png)
 
-The pipeline of PerF performs four steps:
+The pipeline of PerF consists of four steps:
 
 - A. Model preprocessing: attaches source rule label to messages, and prepares object-triggered rules for deterministic execution.
 
@@ -34,7 +34,7 @@ The pipeline of PerF performs four steps:
 
 - D. (Optional) Quantitative analysis: uses PVeStA to evaluate performance metrics expressed by QuaTEx, such as latency and throughput, under injected faults.
 
-The details of our general fault injection mechanism is represented in our paper. See [PerF.pdf](./PerF.pdf)
+Further details of our fault-injection mechanism are provided in the accompanying technical report [PerF.pdf](./PerF.pdf)
 
 ## Repository structure
 
@@ -42,12 +42,12 @@ The details of our general fault injection mechanism is represented in our paper
 .
 ├── 2pc-running-example/   # Running example: simplified Two-Phase Commit protocol
 ├── case-study             # Case studies
-├── PerF.pdf               # Our paper represents the technical details of PerF
-├── images                 # Images used for description docs
+├── PerF.pdf               # Our technical report on PerF
+├── images                 # Figures for description docs
 └── README.md
 ```
 
-## Environment Requirements
+## Tool Setup
 
 To run the tool successfully, the following environment is required:
 
@@ -90,4 +90,4 @@ sh run.sh [--pvesta serverlist ana-model quatex confidence] protocol init fault 
 This command pattern is valid for all case studies.
 Each case directory contains its own README with the specific commands required. 
 
-We recommend to start to use PerF from our [running example](./2pc-running-example).
+We recommend that users begin with our [running example](./2pc-running-example).
