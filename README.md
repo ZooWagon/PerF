@@ -1,35 +1,75 @@
-# PerF
+# PerF: Predict Performance of Distributed System Models under Fault
 
-This repository provides a command-line tool that automates the complete workflow of our formal fault-injection framework for distributed system models specified in Maude.
+## Introduction
 
-The tool performs:
-1. Model preprocessing
-2. Model composition with fault injector
-3. (Optional) Model transformation with event monitor
-4. (Optional) Quantitative analysis via PVeStA
+PerF is a command-line tool for automating fault injection on formal distributed system models written in Maude,
+enabling quantitative analysis of performance metrics(such as latency and throughput) for distributed system models under diverse faults.
 
-## 1. Environment Requirements
+Up to now, PerF supports seven representative faults, covering both benign and Byzantine fault behaviors commonly observed in realistic distributed environments
+
+- message loss
+- message duplication
+- message abnormal delay
+- network partition
+- node crash
+- tampering
+- equivocation
+
+PerF also allows to configure which faults to inject and when to inject them, and provides a monitor that records events of interest at runtime, based on defined performance properties.
+
+Our design insight is that, all these faults can be viewed as manipulations of messages exchanged between actors in distributed system model, 
+It not only simplifies the modeling of individual faults 
+but also provide capabilities for extending the tool with new faults.
+
+## Pipeline of PerF
+![Pipeline of PerF](./images/pipeline-perf.png)
+
+The pipeline of PerF performs four steps:
+
+- A. Model preprocessing: attaches source rule label to messages, and prepares object-triggered rules for deterministic execution.
+
+- B. Model composition with fault injector: integrates the user's system model with our fault injection framework.
+
+- C. (Optional) Model transformation with monitor: instruments the model with a runtime monitor for event logging.
+
+- D. (Optional) Quantitative analysis: uses PVeStA to evaluate performance metrics expressed by QuaTEx, such as latency and throughput, under injected faults.
+
+The details of our general fault injection mechanism is represented in our paper. See [PerF.pdf](./PerF.pdf)
+
+## Repository structure
+
+```
+.
+├── 2pc-running-example/   # Running example: simplified Two-Phase Commit protocol
+├── case-study             # Case studies
+├── PerF.pdf               # Our paper represents the technical details of PerF
+├── images                 # Images used for description docs
+└── README.md
+```
+
+## Environment Requirements
 
 To run the tool successfully, the following environment is required:
 
 - Operating System: Linux (We conduct experiments on CentOS Linux 7)
 
-- Python Versions Supported: Python 2.7, or Python 3.7 (We conduct experiments the two Python version)
+- Python Versions Supported: Python 2.7, or Python 3.7 (We conduct experiments one these two Python version)
 
-- Maude Version: Maude 2.7.1 (required for PVeStA)
+- Maude Version: [Maude 2.7.1](https://github.com/maude-lang/Maude) (required for PVeStA)
 
 - Java Runtime: Java 1.8 (required for PVeStA)
 
+- [PVeStA](http://maude.cs.uiuc.edu/tools/pvesta/): the executable jar file is already included in the repository.
+
 Ensure that the following commands are available globally (in system `$PATH`):
 ```
-python --version  # should be Python 2.7 or Python 3.7 or higher
-maude             # should be Maude 2.7.1
-java -version     # should report Java 1.8
+python --version  # Python 2.7 or Python 3.7 recommended
+maude             # Should be Maude 2.7.1
+java -version     # Must be Java 1.8
 ```
 
-## 2. Command Pattern
-All tool commands follow a unified command-line structure.
-The generic command pattern is:
+## Command Pattern
+All tool commands follow the unified format:
 ```
 sh run.sh [--pvesta serverlist ana-model quatex confidence] protocol init fault [event]
 ```
@@ -48,12 +88,6 @@ sh run.sh [--pvesta serverlist ana-model quatex confidence] protocol init fault 
 | `threshold` | optional  | Error margin, usually 0.01                      |
 
 This command pattern is valid for all case studies.
-Each case directory contains its own README with the specific commands required. Thus, only the general pattern is presented here.
+Each case directory contains its own README with the specific commands required. 
 
-## 3. Repository Structure
-```
-.
-├── 2pc-running-example/   # Running example: simplified 2PC protocol in paper's Appendix A
-├── case-study             #  Case studies
-└── README.md
-```
+We recommend to start to use PerF from our [running example](./2pc-running-example).
